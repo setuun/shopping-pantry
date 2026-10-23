@@ -1,0 +1,1540 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<!-- The system bars take this colour: the page's own background, never a light one (that was
+     a white strip under the installed app). -->
+<meta name="theme-color" content="#121212">
+<!-- Dark before any style is parsed, so the browser's own canvas (what shows while the keyboard
+     slides or the page resizes) is never white. -->
+<meta name="color-scheme" content="dark">
+<title>shopping-pantry</title>
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="manifest" href="manifest.webmanifest">
+<!--
+  shopping-pantry: the whole app in one file. No build, no framework, no CDN, on purpose
+  (AGENTS.md). Every word on screen goes through t("key"), the texts live in i18n/*.json.
+-->
+<style>
+:root {
+  /* Always dark, as inventree-pantry: Material's dark theme, the same surfaces and text
+     opacities, so the household apps look like one family whatever the phone is set to.
+       · base #121212, cards #1E1E1E (5 % white over it), never pure black
+       · text white at 87 % / 60 %, lines at 12 %
+       · the accent is a light tint (#7cc49d) carrying dark text; the microphone keeps the
+         deep green with white, like the term app's button */
+  --bg: #121212; --card: #1e1e1e; --text: rgba(255, 255, 255, 0.87); --muted: rgba(255, 255, 255, 0.60);
+  --line: rgba(255, 255, 255, 0.12); --accent: #7cc49d; --accent-text: rgba(0, 0, 0, 0.87);
+  --soft: #22302a; --warn: #cf6679; --done: rgba(255, 255, 255, 0.38);
+  --radius: 12px;
+  --toast-bg: #2a332e; --toast-text: rgba(255, 255, 255, 0.87); --toast-line: #3a4a41; --error-bg: #8c1d18;
+  /* Without this the browser still draws select lists, date pickers and checkboxes light. */
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+/* The curtain, as in inventree-pantry: the app's mark over a spinner on the page's own
+   background, from the first paint until the list is drawn with its data. It fades, and stops
+   catching taps the moment it starts to. Markup, not script, so it is there before any JS. */
+#boot { position: fixed; inset: 0; z-index: 60; background: var(--bg);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 22px;
+  transition: opacity .2s ease-out, visibility 0s linear .2s; }
+#boot svg { width: 64px; height: 64px; display: block; }
+#boot .ring { width: 34px; height: 34px; border-radius: 50%; border: 3px solid var(--line);
+  border-top-color: var(--accent); animation: spin .8s linear infinite; }
+#boot .msg { color: var(--muted); max-width: 300px; text-align: center; padding: 0 16px; }
+body.ready #boot { opacity: 0; visibility: hidden; pointer-events: none; }
+@media (prefers-reduced-motion: reduce) { #boot { transition: none; } }
+[hidden] { display: none !important; }   /* a display: flex rule must not un-hide an element */
+html { background: #121212; }   /* the canvas behind everything, also during resizes */
+html, body { margin: 0; background: var(--bg); color: var(--text);
+  font: 16px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+body { padding: 0; }
+main { padding-bottom: 120px; }   /* replaced by the bar's real height at run time */
+button, input, select, textarea { font: inherit; color: inherit; }
+/* Android Chrome lays a translucent blue box over whatever is tapped, and on a long press it
+   selects the button like text. Both off for buttons: they have their own pressed look. */
+button { -webkit-tap-highlight-color: transparent; -webkit-user-select: none; user-select: none;
+  -webkit-touch-callout: none; }
+button { cursor: pointer; border: 0; border-radius: 10px; padding: 10px 14px;
+  background: var(--soft); color: var(--text); }
+button.primary { background: var(--accent); color: var(--accent-text); font-weight: 600; }
+button.link, a.link { background: none; padding: 10px 6px; color: var(--accent); text-decoration: none; }
+button.danger { color: var(--warn); }
+button.primary.danger-bg { background: var(--error-bg); color: #fff; }
+button:disabled { opacity: .5; cursor: default; }
+input, select, textarea { width: 100%; padding: 10px 12px; border-radius: 10px;
+  border: 1px solid var(--line); background: var(--card); }
+textarea { resize: vertical; min-height: 64px; }
+header { position: sticky; top: 0; z-index: 5; background: var(--bg); }
+/* App bar as in inventree-pantry: mark, name, version chip; app settings on the right. */
+.appbar { background: var(--card); border-bottom: 1px solid var(--line);
+  padding: env(safe-area-inset-top) 6px 0 16px; }
+.appbar .inner, .listbar .inner { max-width: 640px; margin: 0 auto; display: flex; align-items: center; gap: 8px; }
+.appbar .inner { min-height: 56px; }
+.brand { display: flex; align-items: center; gap: 9px; flex: 1; min-width: 0; }
+.brand .mark { display: flex; color: var(--accent); }
+.brand .mark svg { width: 24px; height: 24px; fill: currentColor; }
+.brand h1 { font-size: 18px; font-weight: 700; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ver { font-size: 11px; color: var(--muted); border: 1px solid var(--line); border-radius: 999px;
+  padding: 2px 7px; font-variant-numeric: tabular-nums; flex: none; }
+/* The list bar: which list this is, and ⋯ for this list only. */
+.listbar { padding: 8px 6px 6px 16px; border-bottom: 1px solid transparent; }
+header.scrolled .listbar { border-bottom-color: var(--line); }
+.switch { flex: 1; min-width: 0; text-align: left; background: none; padding: 4px 0; border-radius: 0; }
+.switch .title { font-size: 1.3em; font-weight: 700; display: flex; align-items: center; gap: 6px; }
+.switch .title span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.switch .title svg { width: 22px; height: 22px; flex: 0 0 22px; fill: var(--muted); }
+.switch .sub { color: var(--muted); font-size: .88em; }
+.iconbtn { width: 44px; height: 44px; flex: 0 0 44px; border-radius: 50%; padding: 0;
+  display: flex; align-items: center; justify-content: center; background: none; }
+.iconbtn svg { width: 24px; height: 24px; fill: var(--text); }
+main { max-width: 640px; margin: 0 auto; padding: 0 16px; }
+.row { display: flex; gap: 8px; align-items: center; }
+.row > .grow { flex: 1; }
+/* The bottom: the AI's reply line and (when opened) the typing line float above a bar with
+   Lists · History · [microphone] · Pantry · Type. The microphone is the round centre: 64 px,
+   raised out of the bar by a ring in the bar's colour, the term app's look in this app's green. */
+.bar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 10; pointer-events: none; }
+.bar > * { pointer-events: auto; }
+/* 34 px below: clear of the microphone, which rises 24 px out of the bar. */
+.bar .inner { max-width: 640px; margin: 0 auto; padding: 0 12px 34px; }
+.bar .inner:empty { display: none; }
+.typebar { align-items: flex-end; gap: 10px; }
+.field-wrap { position: relative; flex: 1; min-width: 0; }
+.typebar { align-items: center; }
+.bar textarea { display: block; min-height: 52px; max-height: 132px; resize: none; border-radius: 26px;
+  padding: 14px 20px; line-height: 22px; overflow-y: hidden; border-width: 1.5px; scrollbar-width: thin;
+  box-shadow: 0 4px 16px rgba(0,0,0,.18); }
+.bar textarea { padding-right: 56px; }
+.send:disabled { opacity: .35; }
+.bar textarea:focus { outline: none; border-color: var(--accent); }
+.bar textarea::placeholder { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.send { position: absolute; right: 5px; bottom: 5px; width: 42px; height: 42px; border-radius: 50%;
+  padding: 0; background: var(--accent); color: var(--accent-text); display: flex;
+  align-items: center; justify-content: center; }
+/* The paper plane is heavy on the left (wide tail) and thin on the right (tip): geometrically
+   centred it looks pushed left, so it moves a little right to sit in the middle for the eye. */
+.send svg { width: 22px; height: 22px; fill: currentColor; transform: translateX(1.5px); }
+nav.bottombar { display: grid; grid-template-columns: repeat(5, 1fr); background: var(--card);
+  border-top: 1px solid var(--line); padding-bottom: env(safe-area-inset-bottom); }
+nav.bottombar > button { background: none; border: 0; border-radius: 0; color: var(--muted);
+  font-size: 11px; font-weight: 600; padding: 8px 2px 10px; min-height: 56px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; }
+nav.bottombar > button svg { width: 22px; height: 22px; fill: currentColor; display: block; }
+nav.bottombar > button.on { color: var(--accent); }
+nav.bottombar .center { display: flex; justify-content: center; align-items: flex-start; }
+.mic { width: 64px; height: 64px; flex: 0 0 64px; border-radius: 50%; padding: 0; margin-top: -24px;
+  display: flex; align-items: center; justify-content: center;
+  background: #2f6f4f; color: #fff; border: 4px solid var(--card);
+  box-shadow: 0 0 0 1px var(--line), 0 6px 14px rgba(0,0,0,.28); }
+.mic svg { width: 30px; height: 30px; fill: currentColor; pointer-events: none; }
+.mic { transition: transform .12s ease-out; }
+.mic:active { transform: scale(.93); }   /* the press is felt, without the browser's blue box */
+.mic.on { background: #c62828; animation: pulse 1.4s ease-out infinite; }
+.mic:disabled { opacity: .6; }
+@keyframes pulse { 0% { box-shadow: 0 0 0 1px var(--line), 0 0 0 0 rgba(198,40,40,.55); }
+  100% { box-shadow: 0 0 0 1px var(--line), 0 0 0 18px rgba(198,40,40,0); } }
+.reply { box-shadow: 0 4px 16px rgba(0,0,0,.18); display: flex; gap: 8px; align-items: center; background: var(--card);
+  border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 12px; margin-bottom: 8px; }
+.reply .text { flex: 1; }
+.reply .heard { color: var(--muted); font-style: italic; }
+.reply.question { border-color: var(--accent); }
+.reply button { padding: 4px 10px; }
+.reply .iconbtn.small { width: 36px; height: 36px; flex: 0 0 36px; padding: 0; }
+.status { color: var(--muted); font-size: .9em; margin-top: 6px; }
+.status:empty { display: none; }
+input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+.section { margin: 18px 4px 6px; font-size: .78em; font-weight: 600; text-transform: uppercase;
+  letter-spacing: .07em; color: var(--muted); display: flex; align-items: center; gap: 8px; }
+.section .grow { flex: 1; }
+.section button { text-transform: none; letter-spacing: 0; font-weight: 500; font-size: 1.15em; }
+/* One card per store section, the items as rows inside it: calmer than a tile per item. */
+.group { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
+  overflow: hidden; }
+.item { display: flex; gap: 12px; align-items: center; padding: 10px 12px 10px 6px; }
+/* On the row itself, not on the red swipe strip under it: the line is see-through (12 % white)
+   and the strip's red showed through it. */
+.group > div + div > .swipe > .item { border-top: 1px solid var(--line); }
+.check { flex: 0 0 44px; height: 44px; padding: 0; background: none; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center; }
+.check::before { content: ""; width: 24px; height: 24px; border-radius: 50%;
+  border: 2px solid var(--accent); box-sizing: border-box; }
+.item.done .check::before { background: var(--accent) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%23121212' d='M9,16.17L4.83,12L3.41,13.41L9,19L21,7L19.59,5.59L9,16.17Z'/%3E%3C/svg%3E") center/16px no-repeat; }
+.item .body { flex: 1; min-width: 0; cursor: pointer; }
+.item .name { font-weight: 500; overflow-wrap: anywhere; }
+.item.done .name { color: var(--done); text-decoration: line-through; font-weight: 400; }
+/* The amount as a label at the right edge: the name stays readable, the amount is one glance
+   and one tap (to say how much was actually got). */
+.amount { flex: 0 0 auto; max-width: 40%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  background: var(--soft); color: var(--accent); font-weight: 600; font-size: .9em;
+  border-radius: 999px; padding: 6px 12px; }
+.item.done .amount { background: none; color: var(--done); font-weight: 400; padding: 6px 4px; }
+.stepper { display: flex; align-items: center; gap: 10px; margin: 6px 0 4px; }
+.stepper button { width: 48px; height: 48px; flex: 0 0 48px; border-radius: 50%; padding: 0;
+  font-size: 1.5em; line-height: 1; }
+.stepper input { width: 90px; flex: 0 0 90px; text-align: center; font-size: 1.3em; font-weight: 600; }
+.stepper .of { color: var(--muted); }
+.item .meta { color: var(--muted); font-size: .85em; margin-top: 1px; }
+.item .meta span + span::before { content: " · "; }
+.pill { display: inline-block; font-size: .8em; padding: 2px 8px; border-radius: 999px;
+  background: var(--soft); color: var(--accent); margin-top: 4px; }
+.pill.button { border: 0; cursor: pointer; }
+.panel { background: var(--card); border-top: 1px solid var(--line); padding: 12px 14px 14px; }
+.panel h3 { margin: 0 0 8px; font-size: 1em; }
+.field { margin: 8px 0; }
+.field label { display: block; font-size: .85em; color: var(--muted); margin-bottom: 4px; }
+.hint { color: var(--muted); font-size: .85em; margin-top: 4px; }
+.buttons { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+.chosen { font-weight: 600; margin: 10px 0 2px; }
+.hits button { display: block; width: 100%; text-align: left; margin: 4px 0; }
+.hits button.on { outline: 2px solid var(--accent); }
+/* Own colours, not "text colour as background": that turned the toast white in dark mode. */
+.toast { position: fixed; left: 16px; right: 16px; bottom: var(--bar-h, 100px);
+  max-width: 600px; margin: 0 auto; background: var(--toast-bg); color: var(--toast-text);
+  border: 1px solid var(--toast-line); box-shadow: 0 6px 20px rgba(0,0,0,.3); padding: 12px 14px;
+  border-radius: 10px; z-index: 20; }
+.toast.error { background: var(--error-bg); color: #fff; border-color: transparent; }
+.toast { display: flex; align-items: center; gap: 12px; }
+.toast span { flex: 1; }
+.toast button.link { color: var(--accent-text); background: var(--accent); padding: 6px 12px; border-radius: 8px; }
+/* Swipe left to delete: the row slides over a red strip that says so. */
+.swipe { position: relative; background: var(--warn); }
+.swipe > .item { position: relative; background: var(--card); touch-action: pan-y;
+  transition: transform .18s ease-out; }
+.swipe > .item.dragging { transition: none; }
+.swipe .bin { position: absolute; right: 18px; top: 50%; transform: translateY(-50%);
+  color: #fff; font-weight: 600; display: flex; align-items: center; gap: 6px; }
+.swipe .bin svg { width: 20px; height: 20px; fill: currentColor; }
+.empty { color: var(--muted); text-align: center; padding: 48px 16px; }
+/* Everything ticked: the step after shopping, made obvious. */
+.finish { background: var(--soft); border: 1px solid var(--accent); border-radius: var(--radius);
+  padding: 14px 16px; margin: 14px 0 4px; }
+.finish .big { font-weight: 700; font-size: 1.1em; margin-bottom: 4px; }
+.finish p { margin: 0 0 12px; color: var(--muted); }
+.finish button { width: 100%; }
+.past { display: flex; align-items: center; gap: 8px; padding: 8px 12px; }
+.past .grow { flex: 1; min-width: 0; }
+.past .meta { color: var(--muted); font-size: .85em; }
+.past button { padding: 6px 10px; font-size: .9em; white-space: nowrap; }
+.empty .big { font-size: 1.1em; color: var(--text); margin-bottom: 6px; }
+/* Bottom sheets: the list switcher and the menu. */
+.sheet { position: fixed; inset: 0; z-index: 30; background: rgba(0,0,0,.45);
+  display: flex; align-items: flex-end; justify-content: center; }
+.sheet > div { background: var(--card); width: 100%; max-width: 640px; max-height: 85vh; overflow-y: auto;
+  border-radius: 18px 18px 0 0; padding: 8px 16px calc(env(safe-area-inset-bottom) + 16px); }
+/* The handle is a promise: the sheet can be dragged down to close. The top strip (handle and
+   title) is where the drag starts, so the list inside still scrolls normally. */
+.sheet .head { touch-action: none; cursor: grab; user-select: none; -webkit-user-select: none; padding: 4px 0 2px; margin: 0 -16px; padding-left: 16px; padding-right: 16px; }
+.sheet .grab { width: 40px; height: 4px; border-radius: 2px; background: var(--line); margin: 4px auto 10px; }
+.sheet > div { transition: transform .2s ease-out; }
+.sheet > div.dragging { transition: none; }
+/* The ⋯ menu: a small card that drops down from the button, as on Android. */
+.pop-shade { position: fixed; inset: 0; z-index: 30; }
+.pop { position: fixed; right: 12px; min-width: 250px; max-width: calc(100vw - 24px); z-index: 31;
+  background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 6px;
+  box-shadow: 0 10px 30px rgba(0,0,0,.28); transform-origin: top right; animation: pop .12s ease-out; }
+@keyframes pop { from { opacity: 0; transform: scale(.94); } }
+.pop .section { margin: 8px 10px 2px; }
+.listrow { display: flex; align-items: center; gap: 4px; }
+.listrow .choice { flex: 1; }
+.listrow .radio { width: 22px; height: 22px; flex: 0 0 22px; border-radius: 50%; border: 2px solid var(--muted); }
+.listrow .choice.on .radio { border: 7px solid var(--accent); }
+.iconbtn.small { width: 40px; height: 40px; flex: 0 0 40px; }
+.iconbtn.small svg { width: 20px; height: 20px; fill: var(--muted); }
+#settings.on svg { fill: var(--accent); }
+.takebar { position: sticky; bottom: calc(var(--bar-h, 100px) + 4px); margin-top: 12px; }
+.takebar button { width: 100%; box-shadow: 0 4px 16px rgba(0,0,0,.2); }
+.pantryrow { display: flex; align-items: center; gap: 12px; padding: 10px 12px; }
+.pantryrow input { width: 22px; height: 22px; flex: 0 0 22px; accent-color: var(--accent); }
+.pantryrow .grow { flex: 1; min-width: 0; }
+.pantryrow .meta { color: var(--muted); font-size: .85em; }
+.group > .pantryrow + .pantryrow, .group > .past + .past { border-top: 1px solid var(--line); }
+.sheet h2 { margin: 0 0 2px; font-size: 1.15em; }
+.sheet .hint { margin: 0 0 10px; }
+.choice { display: flex; width: 100%; align-items: center; gap: 10px; text-align: left;
+  background: none; border-radius: 10px; padding: 12px 10px; }
+.choice:hover, .choice.on { background: var(--soft); }
+.choice .grow { flex: 1; min-width: 0; }
+.choice .count { color: var(--muted); font-size: .9em; }
+.choice.on .grow { font-weight: 600; color: var(--accent); }
+.choice.danger { color: var(--warn); }
+.group .choice { border-radius: 0; padding: 14px 12px; }
+.group > .listrow + .listrow { border-top: 1px solid var(--line); }
+.sep { border-top: 1px solid var(--line); margin: 8px 0; }
+.toggle { display: flex; align-items: center; gap: 10px; padding: 14px 12px; }
+.toggle input { width: 22px; height: 22px; flex: 0 0 22px; accent-color: var(--accent); }
+.group > * + .toggle, .group > .toggle + * { border-top: 1px solid var(--line); }
+.dialog { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: flex;
+  align-items: center; justify-content: center; z-index: 30; padding: 16px; }
+.dialog > div { background: var(--card); border-radius: var(--radius); padding: 16px;
+  width: 100%; max-width: 420px; }
+.dialog h2 { margin: 0 0 6px; font-size: 1.15em; }
+.spin { display: inline-block; width: 14px; height: 14px; border: 2px solid currentColor;
+  border-right-color: transparent; border-radius: 50%; animation: spin .8s linear infinite;
+  vertical-align: -2px; margin-right: 6px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+<div id="boot">
+  <!-- same drawing as icon.svg -->
+  <svg viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="14" fill="#2f6f4f"/><path d="M14 18h6l5 22h20l5-15H23" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/><circle cx="28" cy="48" r="3.5" fill="#fff"/><circle cx="43" cy="48" r="3.5" fill="#fff"/></svg>
+  <div class="ring" role="status"></div>
+</div>
+<header>
+  <div class="appbar"><div class="inner">
+    <div class="brand"><span class="mark" id="mark"></span><h1 id="appname"></h1><span class="ver" id="ver"></span></div>
+    <button class="iconbtn" id="settings"></button>
+  </div></div>
+  <div class="listbar"><div class="inner">
+    <button class="switch" id="switch"><div class="title"><span id="title"></span><span id="drop"></span></div>
+      <div class="sub" id="sub"></div></button>
+    <button class="iconbtn" id="menu"></button>
+  </div></div>
+</header>
+<main>
+  <div class="status" id="status"></div>
+  <!-- One view per tab; the app bar, the list bar and the bottom bar stay put around them. -->
+  <section id="view-list"><div id="list"></div></section>
+  <section id="view-history" hidden></section>
+  <section id="view-pantry" hidden></section>
+  <section id="view-lists" hidden></section>
+  <section id="view-settings" hidden></section>
+</main>
+<div class="bar">
+  <div class="inner"><div id="reply"></div><div class="row typebar" id="typebar" hidden>
+    <div class="field-wrap">
+      <textarea id="text" rows="1" enterkeyhint="send"></textarea>
+      <button class="send" id="send" disabled></button>
+    </div>
+  </div></div>
+  <nav class="bottombar">
+    <button id="nav-list"></button>
+    <button id="nav-history"></button>
+    <div class="center"><button class="mic" id="mic"></button></div>
+    <button id="nav-pantry"></button>
+    <button id="nav-lists"></button>
+  </nav>
+</div>
+<script>
+"use strict";
+
+/* ---- Basics ------------------------------------------------------------------------------ */
+
+const $ = (sel) => document.querySelector(sel);
+function el(tag, props, ...children) {
+  const e = document.createElement(tag);
+  Object.assign(e, props || {});
+  for (const c of children) if (c != null) e.append(c);
+  return e;
+}
+
+let TEXTS = {};
+let LANG = "de";
+// Every word on screen goes through here. Do not shadow `t` (AGENTS.md).
+function t(key, vars) {
+  let s = TEXTS[key] != null ? TEXTS[key] : key;
+  for (const k in vars || {}) s = s.split("{" + k + "}").join(vars[k]);
+  return s;
+}
+
+function store(key, value) {
+  try {
+    if (value === undefined) return localStorage.getItem(key);
+    localStorage.setItem(key, value);
+  } catch (e) { return null; }
+}
+
+// `action` = {label, fn}: a button in the toast (undo), which keeps it up a little longer.
+function toast(msg, error, action) {
+  const old = $(".toast");
+  if (old) old.remove();
+  const box = el("div", { className: "toast" + (error ? " error" : "") }, el("span", { textContent: msg }));
+  if (action) {
+    const b = el("button", { className: "link", textContent: action.label });
+    b.onclick = () => { box.remove(); action.fn(); };
+    box.append(b);
+  }
+  document.body.append(box);
+  setTimeout(() => box.remove(), error ? 6000 : action ? 6000 : 3000);
+}
+
+async function api(path, opts) {
+  opts = opts || {};
+  const headers = { "X-Device": encodeURIComponent(DEVICE || "") };
+  let body = opts.body;
+  if (body && !(body instanceof Blob) && !(body instanceof ArrayBuffer)) {
+    headers["Content-Type"] = "application/json";
+    body = JSON.stringify(body);
+  } else if (body) {
+    headers["Content-Type"] = opts.type || "application/octet-stream";
+  }
+  let r;
+  try {
+    r = await fetch("api/" + path, { method: opts.method || "GET", headers: headers, body: body });
+  } catch (e) {
+    throw new Error(t("error.offline"));
+  }
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(data.error || ("HTTP " + r.status));
+  return data;
+}
+
+/* Every button that waits for the server goes through here: disabled at once, spinner after
+   150 ms, an error becomes a toast and the button comes back. */
+async function withBusy(button, fn) {
+  if (button.disabled) return;
+  const label = button.innerHTML;
+  button.disabled = true;
+  const timer = setTimeout(() => { button.innerHTML = '<span class="spin"></span>' + label; }, 150);
+  try {
+    return await fn();
+  } catch (e) {
+    toast(e.message, true);
+  } finally {
+    clearTimeout(timer);
+    button.disabled = false;
+    button.innerHTML = label;
+  }
+}
+
+function fmtNum(x) {
+  return (Number(x) || 0).toLocaleString(LANG, { maximumFractionDigits: 3 });
+}
+function fmtAmount(x, units) {
+  return units ? fmtNum(x) + " " + units : fmtNum(x) + " ×";
+}
+function isoInDays(days) {
+  const d = new Date();
+  d.setDate(d.getDate() + (Number(days) || 0));
+  return d.toISOString().slice(0, 10);
+}
+// "6", "6 Stück", "2 x 1 l" -> the first number, else 1.
+function firstNumber(s) {
+  const m = String(s || "").replace(",", ".").match(/\d+(\.\d+)?/);
+  return m ? Number(m[0]) : 1;
+}
+
+/* ---- Icons ----------------------------------------------------------------------------
+   Material icons, filled, on a 24×24 grid in currentColor: the same set and style as
+   inventree-pantry (whose ICON table these cart, list, box, back, plus and trash paths come
+   from), so the two apps read as one family. */
+const ICON = {
+  cart: 'M7 18a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM1 2v2h2l3.6 7.59-1.35 2.45A2 2 0 0 0 7 17h12v-2'
+      + 'H7.42a.25.25 0 0 1-.22-.37L8.1 13h7.45a2 2 0 0 0 1.75-1.03l3.58-6.49L19.13 4 15.55 11'
+      + 'H8.53L4.27 2zm16 16a2 2 0 1 0 0 4 2 2 0 0 0 0-4z',
+  list: 'M3 13h2v-2H3zm0 4h2v-2H3zm0-8h2V7H3zm4 4h14v-2H7zm0 4h14v-2H7zM7 7v2h14V7z',
+  box: 'M20 2H4c-1 0-2 .9-2 2v3.01c0 .72.43 1.34 1 1.69V20c0 1.1 1.1 2 2 2h14c.9 0 2-.9 2-2V8.7'
+     + 'c.57-.35 1-.97 1-1.69V4c0-1.1-1-2-2-2zm-5 12H9v-2h6v2zm5-7H4V4h16v3z',
+  back: 'M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.42-1.41L7.83 13H20z',
+  trash: 'M6 19a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z',
+  history: 'M13 3a9 9 0 0 0-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7'
+         + 'c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42A8.954 8.954 0 0 0 13 21a9 9 0 0 0 0-18zm-1 5v5'
+         + 'l4.28 2.54.72-1.21-3.5-2.08V8H12z',
+  keyboard: 'M20 5H4c-1.1 0-1.99.9-1.99 2L2 17c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2z'
+          + 'm-9 3h2v2h-2V8zm0 3h2v2h-2v-2zM8 8h2v2H8V8zm0 3h2v2H8v-2zm-1 2H5v-2h2v2zm0-3H5V8h2v2z'
+          + 'm9 7H8v-2h8v2zm0-4h-2v-2h2v2zm0-3h-2V8h2v2zm3 3h-2v-2h2v2zm0-3h-2V8h2v2z',
+  mic: 'M12 14c1.66 0 2.99-1.34 2.99-3L15 5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z'
+     + 'm5.3-3c0 3-2.54 5.1-5.3 5.1S6.7 14 6.7 11H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28'
+     + 'c3.28-.48 6-3.3 6-6.72h-1.7z',
+  settings: 'M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 0 0 .12-.61'
+          + 'l-1.92-3.32a.488.488 0 0 0-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.484.484'
+          + ' 0 0 0-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96'
+          + 'c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94'
+          + 's.02.64.07.94l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96'
+          + 'c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54'
+          + 'c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61'
+          + 'l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6'
+          + '-1.62 3.6-3.6 3.6z',
+  more: 'M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2'
+      + '-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z',
+  close: 'M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19'
+       + ' 19 17.59 13.41 12z',
+  drop: 'M7 10l5 5 5-5z',
+  checklist: 'M22 7h-9v2h9V7zm0 8h-9v2h9v-2zM5.54 11 2 7.46l1.41-1.41 2.12 2.12 4.24-4.24 1.41 1.41'
+           + 'L5.54 11zm0 8L2 15.46l1.41-1.41 2.12 2.12 4.24-4.24 1.41 1.41L5.54 19z',
+  pencil: 'M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zm17.71-10.21a1 1 0 0 0 0-1.41'
+        + 'l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z',
+  send: 'M2.01 21 23 12 2.01 3 2 10l15 2-15 2z',
+};
+function icon(name, size) {
+  const n = size || 24;
+  return '<svg viewBox="0 0 24 24" aria-hidden="true" width="' + n + '" height="' + n
+       + '"><path d="' + ICON[name] + '"/></svg>';
+}
+// A bottom-bar button: icon over a word, as in inventree-pantry.
+function navButton(id, name, label) {
+  const b = $("#" + id);
+  b.innerHTML = icon(name, 22);
+  b.append(el("span", { textContent: label }));
+  return b;
+}
+
+/* ---- State ------------------------------------------------------------------------------- */
+
+let CONFIG = null;
+let DEVICE = store("shopping.device") || "";
+let LISTS = [];
+let CURRENT = Number(store("shopping.list")) || 0;
+let LIST = null;                 // the current list with its items
+let OPEN_PANEL = null;           // item id whose panel is open, so a live refresh keeps it
+let SHOW_DONE = store("shopping.showDone") !== "0";
+let TAB = "list";                // list | history | pantry | lists | settings
+
+/* ---- Device name ------------------------------------------------------------------------- */
+
+function askDevice() {
+  return new Promise((resolve) => {
+    const input = el("input", { type: "text", value: DEVICE, maxLength: 40 });
+    const save = el("button", { className: "primary", textContent: t("device.save") });
+    const box = el("div", { className: "dialog" }, el("div", {},
+      el("h2", { textContent: t("device.title") }),
+      el("p", { className: "hint", textContent: t("device.hint") }),
+      input, el("div", { className: "buttons" }, save)));
+    // Renaming later (from the menu) can be called off; the very first name cannot.
+    if (DEVICE) {
+      const cancel = el("button", { textContent: t("common.cancel") });
+      cancel.onclick = () => { box.remove(); resolve(); };
+      save.after(cancel);
+    }
+    const done = () => {
+      const v = input.value.trim();
+      if (!v) return input.focus();
+      DEVICE = v;
+      store("shopping.device", v);
+      box.remove();
+      resolve();
+    };
+    save.onclick = done;
+    input.onkeydown = (e) => { if (e.key === "Enter") done(); };
+    document.body.append(box);
+    input.focus();
+  });
+}
+
+/* ---- Lists, header, menu ---------------------------------------------------------------- */
+
+function listName(l) { return l.name || t("list.default"); }
+
+async function loadLists() {
+  LISTS = await api("lists");
+  if (!LISTS.find((l) => l.id === CURRENT)) CURRENT = LISTS[0].id;
+  drawHeader();
+  if (TAB === "lists") drawLists();
+}
+
+function switchTo(id) {
+  CURRENT = id;
+  store("shopping.list", String(id));
+  OPEN_PANEL = null;
+  drawHeader();
+  loadList();
+  if (TAB === "history") drawHistory();
+}
+
+/* Tabs, as in inventree-pantry: the bars stay, the view between them changes. List, History
+   and Pantry are about the current list, and the list bar says which; Lists and Settings put
+   their own title there. */
+const LIST_TABS = ["list", "history", "pantry"];
+function showTab(name) {
+  TAB = name;
+  for (const v of ["list", "history", "pantry", "lists", "settings"]) $("#view-" + v).hidden = v !== name;
+  for (const n of ["list", "history", "pantry", "lists"]) $("#nav-" + n).classList.toggle("on", n === name);
+  $("#settings").classList.toggle("on", name === "settings");
+  OPEN_PANEL = null;
+  window.scrollTo(0, 0);
+  drawHeader();
+  if (name === "list") drawList();
+  else if (name === "history") drawHistory();
+  else if (name === "pantry") drawPantry();
+  else if (name === "lists") drawLists();
+  else if (name === "settings") drawSettings();
+}
+
+function drawHeader() {
+  const l = LISTS.find((x) => x.id === CURRENT);
+  const aboutList = LIST_TABS.includes(TAB);
+  $("#menu").hidden = !aboutList;
+  $("#drop").hidden = !aboutList;
+  if (!aboutList) {
+    $("#title").textContent = t(TAB === "lists" ? "lists.title" : "settings.page");
+    $("#sub").textContent = TAB === "lists" ? t("lists.sub") : "";
+    return;
+  }
+  $("#title").textContent = l ? listName(l) : "";
+  document.title = l ? listName(l) + " · " + t("app.title") : t("app.title");
+  if (TAB !== "list") { $("#sub").textContent = t(TAB === "history" ? "history.sub" : "pantry.sub"); return; }
+  const bits = [];
+  if (LIST && LIST.id === CURRENT) {
+    const open = LIST.items.filter((i) => !i.done).length;
+    const done = LIST.items.length - open;
+    bits.push(t("header.open", { n: open }));
+    if (done) bits.push(t("header.done", { n: done }));
+  }
+  if (LISTS.length > 1) bits.push(t("header.lists", { n: LISTS.length }));
+  $("#sub").textContent = bits.join(" · ");
+}
+
+function sheet(title, hint, ...content) {
+  const head = el("div", { className: "head" }, el("div", { className: "grab" }), el("h2", { textContent: title }));
+  const inner = el("div", {}, head);
+  if (hint) inner.append(el("p", { className: "hint", textContent: hint }));
+  inner.append(...content);
+  const box = el("div", { className: "sheet" }, inner);
+  const close = () => { inner.style.transform = "translateY(100%)"; setTimeout(() => box.remove(), 180); };
+  box.onclick = (e) => { if (e.target === box) close(); };
+  // Drag the top strip down: past a quarter of the height (or a quick flick) it closes,
+  // otherwise it springs back.
+  let y0 = null, t0 = 0, dy = 0;
+  head.addEventListener("pointerdown", (e) => {
+    y0 = e.clientY; t0 = Date.now(); dy = 0;
+    head.setPointerCapture(e.pointerId);
+    inner.classList.add("dragging");
+  });
+  head.addEventListener("pointermove", (e) => {
+    if (y0 == null) return;
+    dy = Math.max(0, e.clientY - y0);
+    inner.style.transform = "translateY(" + dy + "px)";
+  });
+  const end = () => {
+    if (y0 == null) return;
+    y0 = null;
+    inner.classList.remove("dragging");
+    const flick = dy > 40 && Date.now() - t0 < 250;
+    if (dy > inner.offsetHeight / 4 || flick) close();
+    else inner.style.transform = "";
+  };
+  head.addEventListener("pointerup", end);
+  head.addEventListener("pointercancel", end);
+  document.body.append(box);
+  return box;
+}
+
+function choice(label, count, onclick, cls) {
+  const b = el("button", { className: "choice" + (cls ? " " + cls : "") },
+    el("span", { className: "grow", textContent: label }));
+  if (count != null && count !== "") b.append(el("span", { className: "count", textContent: count }));
+  b.onclick = onclick;
+  return b;
+}
+
+/* Yes/no in the app's own style, instead of the browser's confirm(). */
+function ask(question, yesLabel, onYes) {
+  const yes = el("button", { className: "primary danger-bg", textContent: yesLabel });
+  const no = el("button", { textContent: t("common.cancel") });
+  const box = sheet(question, "", el("div", { className: "buttons" }, yes, no));
+  no.onclick = () => box.remove();
+  yes.onclick = () => withBusy(yes, async () => { await onYes(); box.remove(); });
+}
+
+/* A one-line form inside a sheet, instead of the browser's prompt(). */
+function nameForm(value, placeholder, button, onsave) {
+  const input = el("input", { type: "text", value: value || "", placeholder: placeholder, maxLength: 100 });
+  const save = el("button", { className: "primary", textContent: button });
+  const go = () => withBusy(save, () => onsave(input.value.trim()));
+  save.onclick = go;
+  input.onkeydown = (e) => { if (e.key === "Enter") go(); };
+  setTimeout(() => input.focus(), 50);
+  return el("div", { className: "row field" }, input, save);
+}
+
+$("#switch").onclick = () => { if (LIST_TABS.includes(TAB)) showTab("lists"); };
+
+/* ⋯ is about THIS list only. App-wide things live elsewhere: lists, history and pantry in the
+   bottom bar, settings behind ⚙ in the app bar. */
+$("#menu").onclick = () => {
+  const l = LISTS.find((x) => x.id === CURRENT);
+  if (!l) return;
+  const shade = el("div", { className: "pop-shade" });
+  const pop = el("div", { className: "pop" });
+  const close = () => { shade.remove(); pop.remove(); };
+  shade.onclick = close;
+  const item = (label, fn, cls) => choice(label, "", () => { close(); fn(); }, cls);
+  pop.append(el("div", { className: "section", textContent: t("menu.forList", { name: listName(l) }) }));
+  if (LIST && LIST.items.some((i) => i.done)) {
+    pop.append(item(t("menu.clearDone"), () => api("lists/" + CURRENT + "/clear-done", { method: "POST" }).catch((e) => toast(e.message, true))));
+  }
+  pop.append(item(t("list.rename"), () => {
+    const box = sheet(t("list.rename"), "", nameForm(l.name, t("list.default"), t("item.save"), async (name) => {
+      await api("lists/" + l.id, { method: "PATCH", body: { name: name } });
+      box.remove();
+      loadLists();
+    }));
+  }));
+  if (LISTS.length > 1) {
+    pop.append(item(t("list.remove"), () => {
+      ask(t("list.removeConfirm", { name: listName(l) }), t("list.remove"), async () => {
+        await api("lists/" + l.id, { method: "PATCH", body: { archived: true } });
+        await loadLists();
+        switchTo(CURRENT);
+      });
+    }, "danger"));
+  }
+  pop.style.top = ($("#menu").getBoundingClientRect().bottom + 4) + "px";
+  document.body.append(shade, pop);
+};
+
+/* ⚙: settings of the app on this device, as a view between the bars. */
+$("#settings").onclick = () => showTab(TAB === "settings" ? "list" : "settings");
+function drawSettings() {
+  const host = $("#view-settings");
+  host.textContent = "";
+  const group = el("div", { className: "group" });
+  const name = choice(t("settings.device", { name: DEVICE }), "", async () => {
+    await askDevice();
+    name.querySelector(".grow").textContent = t("settings.device", { name: DEVICE });
+  });
+  group.append(name);
+  if (CONFIG.features.tts) {
+    const speakBox = el("input", { type: "checkbox", checked: SPEAK });
+    speakBox.onchange = () => { SPEAK = speakBox.checked; store("shopping.speak", SPEAK ? "1" : "0"); };
+    group.append(el("label", { className: "toggle" }, speakBox, t("settings.speak")));
+  }
+  host.append(el("div", { className: "section", textContent: t("settings.title") }), group,
+    el("div", { className: "section", textContent: t("settings.about") }),
+    el("div", { className: "group" }, el("div", { className: "toggle", textContent: t("settings.version", { v: CONFIG.version }) })));
+}
+
+/* Lists: pick one (it becomes the list every other tab is about), create, rename, remove. */
+function drawLists() {
+  const host = $("#view-lists");
+  host.textContent = "";
+  const group = el("div", { className: "group" });
+  for (const l of LISTS) {
+    const pick = choice(listName(l), l.open ? t("lists.openCount", { n: l.open }) : "",
+      () => { switchTo(l.id); showTab("list"); }, l.id === CURRENT ? "on" : "");
+    pick.prepend(el("span", { className: "radio" }));
+    const edit = el("button", { className: "iconbtn small", title: t("lists.edit") });
+    edit.innerHTML = icon("pencil");
+    edit.onclick = () => editList(l);
+    group.append(el("div", { className: "listrow" }, pick, edit));
+  }
+  const add = choice("+ " + t("list.new"), "", () => {
+    add.replaceWith(nameForm("", t("list.newName"), t("lists.create"), async (name) => {
+      const r = await api("lists", { method: "POST", body: { name: name } });
+      await loadLists();
+      switchTo(r.id);
+      showTab("list");
+    }));
+  });
+  host.append(el("p", { className: "hint", textContent: t("lists.hint") }), group,
+    el("div", { className: "group", style: "margin-top: 12px" }, add));
+}
+
+function editList(l) {
+  const remove = el("button", { className: "danger", textContent: t("list.remove") });
+  const box = sheet(t("lists.edit"), "", nameForm(l.name, t("list.default"), t("item.save"), async (name) => {
+    await api("lists/" + l.id, { method: "PATCH", body: { name: name } });
+    box.remove();
+    loadLists();
+  }), el("div", { className: "buttons" }, remove));
+  remove.hidden = LISTS.length <= 1;
+  remove.onclick = () => {
+    box.remove();
+    ask(t("list.removeConfirm", { name: listName(l) }), t("list.remove"), async () => {
+      await api("lists/" + l.id, { method: "PATCH", body: { archived: true } });
+      await loadLists();
+      switchTo(CURRENT);
+    });
+  };
+}
+
+/* History of the current list, by day. "+ again" puts a thing back on it. */
+async function drawHistory() {
+  const host = $("#view-history");
+  let rows;
+  try { rows = await api("history?list=" + CURRENT); } catch (e) { return toast(e.message, true); }
+  if (TAB !== "history") return;
+  host.textContent = "";
+  if (!rows.length) return host.append(el("div", { className: "empty", textContent: t("history.empty") }));
+  let lastDay = null, group = null;
+  for (const it of rows) {
+    const day = new Date(it.done_at).toLocaleDateString(LANG, { weekday: "short", day: "numeric", month: "numeric", year: "numeric" });
+    if (day !== lastDay) {
+      host.append(el("div", { className: "section", textContent: day }));
+      group = el("div", { className: "group" });
+      host.append(group);
+      lastDay = day;
+    }
+    const name = el("div", { className: "grow" }, el("div", { textContent: (it.quantity ? it.quantity + " " : "") + it.name }));
+    if (it.done_by && it.done_by !== DEVICE) name.append(el("div", { className: "meta", textContent: it.done_by }));
+    const again = el("button", { textContent: "+ " + t("history.readd") });
+    again.onclick = () => withBusy(again, async () => {
+      await api("lists/" + CURRENT + "/items", { method: "POST", body: { name: it.name, quantity: it.quantity, section: it.section } });
+      toast(t("history.readded", { name: it.name }));
+    });
+    group.append(el("div", { className: "past" }, name, again));
+  }
+}
+
+/* What the pantry is missing (InvenTree's own low-stock list), to tick and put on this list,
+   like the shopping tab of inventree-pantry. */
+async function drawPantry() {
+  const host = $("#view-pantry");
+  host.textContent = "";
+  host.append(el("div", { className: "empty", textContent: t("input.thinking") }));
+  let rows;
+  try { rows = await api("pantry/missing"); } catch (e) { host.textContent = ""; return toast(e.message, true); }
+  if (TAB !== "pantry") return;
+  host.textContent = "";
+  if (!rows.length) return host.append(el("div", { className: "empty", textContent: t("pantry.missingNone") }));
+  const picks = [];
+  const take = el("button", { className: "primary" });
+  const count = () => {
+    const n = picks.filter((x) => x.box.checked).length;
+    take.textContent = t("pantry.add", { n: n });
+    take.disabled = !n;
+  };
+  const group = el("div", { className: "group" });
+  for (const p of rows) {
+    const qty = p.units ? fmtAmount(Math.max(0, p.minimum - p.in_stock), p.units)
+                        : String(Math.max(1, Math.ceil(p.minimum - p.in_stock)));
+    const box = el("input", { type: "checkbox" });
+    box.onchange = count;
+    group.append(el("label", { className: "pantryrow" }, box,
+      el("div", { className: "grow" }, el("div", { textContent: p.name }),
+        el("div", { className: "meta", textContent: t("pantry.missingLine", { have: fmtAmount(p.in_stock, p.units), want: fmtAmount(p.minimum, p.units) }) })),
+      el("span", { className: "amount", textContent: qty })));
+    picks.push({ box: box, p: p, qty: qty });
+  }
+  take.onclick = () => withBusy(take, async () => {
+    const chosen = picks.filter((x) => x.box.checked);
+    await api("lists/" + CURRENT + "/items", { method: "POST", body: { items: chosen.map((x) => ({
+      name: x.p.name, quantity: x.qty, section: "", pantry_hint: x.p.pk })) } });
+    const l = LISTS.find((x) => x.id === CURRENT);
+    toast(t("pantry.added", { n: chosen.length, list: l ? listName(l) : "" }));
+    chosen.forEach((x) => { x.box.checked = false; });
+    count();
+  });
+  count();
+  host.append(el("p", { className: "hint", textContent: t("pantry.hint") }), group,
+    el("div", { className: "takebar" }, take));
+}
+
+/* Android's back gesture, as in inventree-pantry: one spare history entry sits on top, so
+   "back" arrives here instead of leaving. It closes what is on top (menu, sheet, page, an open
+   form), in that order. With nothing open, the first press says "press again to leave" and the
+   second within 2.5 s leaves. Only ever ONE spare entry: a close button on the page does not
+   spend it, so nothing can get out of step. */
+let LEAVE_ARMED = false;
+function armHistory() {
+  try { history.pushState({ shopping: "guard" }, ""); } catch (e) { /* not fatal */ }
+}
+function closeTop() {
+  if (!$("#typebar").hidden) { hideType(true); return true; }
+  const pop = $(".pop");
+  if (pop) { $(".pop-shade").remove(); pop.remove(); return true; }
+  const sheets = document.querySelectorAll(".sheet, .dialog");
+  if (sheets.length) { sheets[sheets.length - 1].remove(); return true; }
+  if (OPEN_PANEL) { OPEN_PANEL = null; drawList(); return true; }
+  if (TAB !== "list") { showTab("list"); return true; }      // every tab leads back to the list
+  return false;
+}
+window.addEventListener("popstate", () => {
+  if (closeTop()) { armHistory(); return; }
+  if (LEAVE_ARMED) { setTimeout(() => history.back(), 0); return; }
+  LEAVE_ARMED = true;
+  toast(t("nav.backAgainToLeave"));
+  setTimeout(() => { LEAVE_ARMED = false; }, 2500);
+  armHistory();
+});
+
+window.addEventListener("scroll", () => {
+  document.querySelector("header").classList.toggle("scrolled", window.scrollY > 4);
+});
+
+/* ---- The list ---------------------------------------------------------------------------- */
+
+async function loadList() {
+  try {
+    LIST = await api("lists/" + CURRENT);
+  } catch (e) {
+    return toast(e.message, true);
+  }
+  drawList();
+}
+
+function sectionOrder(name) {
+  const i = CONFIG.sections.indexOf(name);
+  return i < 0 ? CONFIG.sections.length - 1 : i;
+}
+
+function drawList() {
+  if (TAB !== "list") { drawHeader(); return; }
+  const host = $("#list");
+  host.textContent = "";
+  drawHeader();
+  const open = LIST.items.filter((i) => !i.done);
+  const done = LIST.items.filter((i) => i.done);
+  if (!LIST.items.length) {
+    host.append(el("div", { className: "empty" },
+      el("div", { className: "big", textContent: t("list.empty") }),
+      el("div", { textContent: CONFIG.features.ai ? t("list.emptyHintAi") : t("list.emptyHint") })));
+    return;
+  }
+
+  // Open items grouped by store section, in walking order: one card per section.
+  open.sort((a, b) => sectionOrder(a.section) - sectionOrder(b.section) || a.id - b.id);
+  let group = null, last = null;
+  for (const it of open) {
+    const sec = CONFIG.sections[sectionOrder(it.section)];
+    if (sec !== last) {
+      host.append(el("div", { className: "section", textContent: sec }));
+      group = el("div", { className: "group" });
+      host.append(group);
+      last = sec;
+    }
+    group.append(itemRow(it));
+  }
+
+  if (done.length && !open.length) {
+    const finish = el("button", { className: "primary", textContent: t("finish.button") });
+    finish.onclick = () => withBusy(finish, () => api("lists/" + CURRENT + "/clear-done", { method: "POST" }));
+    host.append(el("div", { className: "finish" },
+      el("div", { className: "big", textContent: t("finish.title") }),
+      el("p", { textContent: t("finish.text") }), finish));
+  }
+
+  if (done.length) {
+    const toggleBtn = el("button", { className: "link", textContent: SHOW_DONE ? t("done.hide") : t("done.show") });
+    toggleBtn.onclick = () => { SHOW_DONE = !SHOW_DONE; store("shopping.showDone", SHOW_DONE ? "1" : "0"); drawList(); };
+    const clear = el("button", { className: "link", textContent: t("done.clear") });
+    clear.onclick = () => withBusy(clear, () => api("lists/" + CURRENT + "/clear-done", { method: "POST" }));
+    host.append(el("div", { className: "section" },
+      el("span", { className: "grow", textContent: t("done.title", { n: done.length }) }), toggleBtn, clear));
+    if (SHOW_DONE) {
+      const g = el("div", { className: "group" });
+      done.sort((a, b) => (b.done_at || "").localeCompare(a.done_at || ""));
+      for (const it of done) g.append(itemRow(it));
+      host.append(g);
+    }
+  }
+}
+
+function itemRow(it) {
+  const check = el("button", { className: "check", title: t(it.done ? "item.uncheck" : "item.check") });
+  check.onclick = () => toggle(it);
+  const name = el("div", { className: "name" });
+  name.append(it.name);
+  const meta = el("div", { className: "meta" });
+  if (it.note) meta.append(el("span", { textContent: it.note }));
+  // Who did it, only when it was somebody else: one's own name on every line is noise.
+  const who = it.done ? it.done_by : it.created_by;
+  if (who && who !== DEVICE) {
+    meta.append(el("span", { textContent: t(it.done ? "item.doneBy" : "item.addedBy", { who: who }) }));
+  }
+  const body = el("div", { className: "body" }, name);
+  if (meta.childNodes.length) body.append(meta);
+  if (it.done && CONFIG.features.pantry) body.append(pantryBadge(it));
+  body.onclick = (e) => { if (!e.target.closest("button")) togglePanel(it, "edit"); };
+  const row = el("div", { className: "item" + (it.done ? " done" : "") }, check, body);
+  if (it.quantity) {
+    const amount = el(it.done ? "span" : "button", { className: "amount", textContent: it.quantity });
+    // Open item with a count above 1: "how much did you get?"; otherwise the form.
+    if (!it.done) {
+      const q = parseQty(it.quantity);
+      amount.title = t("partial.title");
+      amount.onclick = () => togglePanel(it, q && q.n > 1 ? "partial" : "edit");
+    }
+    row.append(amount);
+  }
+  // mdi "delete"
+  const bin = el("div", { className: "bin" }, t("item.delete"));
+  bin.insertAdjacentHTML("afterbegin", icon("trash", 20));
+  const strip = el("div", { className: "swipe" }, bin, row);
+  swipeToDelete(row, it);
+  const wrap = el("div", {}, strip);
+  /* The open panel is built once and then carried over: another phone ticking something
+     redraws this list, and that must not wipe a half-filled form. */
+  if (OPEN_PANEL && OPEN_PANEL.id === it.id) {
+    if (!OPEN_PANEL.node) {
+      OPEN_PANEL.node = OPEN_PANEL.kind === "edit" ? editPanel(it)
+        : OPEN_PANEL.kind === "partial" ? partialPanel(it) : pantryPanel(it);
+    }
+    wrap.append(OPEN_PANEL.node);
+  }
+  return wrap;
+}
+
+/* Swipe a row left past a third of its width and it is deleted, with an undo in the toast.
+   Pointer events cover touch and mouse alike; a mostly vertical move is left to scrolling
+   (touch-action: pan-y), and a drag never counts as a tap on the row. */
+function swipeToDelete(row, it) {
+  let x0 = null, y0 = 0, dx = 0, horizontal = false;
+  row.addEventListener("pointerdown", (e) => {
+    if (e.button !== 0 || e.target.closest("button, input, select")) return;
+    x0 = e.clientX; y0 = e.clientY; dx = 0; horizontal = false;
+  });
+  row.addEventListener("pointermove", (e) => {
+    if (x0 == null) return;
+    const mx = e.clientX - x0, my = e.clientY - y0;
+    if (!horizontal) {
+      if (Math.abs(my) > 10 && Math.abs(my) > Math.abs(mx)) { x0 = null; return; }
+      if (Math.abs(mx) < 10) return;
+      horizontal = true;
+      row.classList.add("dragging");
+      row.setPointerCapture(e.pointerId);
+    }
+    dx = Math.min(0, mx);
+    row.style.transform = "translateX(" + dx + "px)";
+  });
+  const end = () => {
+    if (x0 == null) return;
+    x0 = null;
+    row.classList.remove("dragging");
+    if (!horizontal) return;
+    row.addEventListener("click", (e) => e.stopPropagation(), { capture: true, once: true });
+    if (dx < -row.offsetWidth / 3) {
+      row.style.transform = "translateX(-100%)";
+      setTimeout(() => deleteItem(it), 150);
+    } else {
+      row.style.transform = "";
+    }
+  };
+  row.addEventListener("pointerup", end);
+  row.addEventListener("pointercancel", end);
+}
+
+async function deleteItem(it) {
+  if (OPEN_PANEL && OPEN_PANEL.id === it.id) OPEN_PANEL = null;
+  LIST.items = LIST.items.filter((x) => x.id !== it.id);     // at once; the live event confirms
+  drawList();
+  try {
+    const r = await api("items/" + it.id, { method: "DELETE" });
+    toast(t("item.deleted", { name: it.name }), false, r.undo ? {
+      label: t("reply.undo"),
+      fn: () => api("undo/" + r.undo, { method: "POST" }).catch((e) => toast(e.message, true)),
+    } : null);
+  } catch (e) {
+    toast(e.message, true);
+    loadList();
+  }
+}
+
+// "3 Päckchen" -> {n: 3, unit: "Päckchen"}; "500g" -> {n: 500, unit: "g"}; "etwas" -> null.
+function parseQty(q) {
+  const m = String(q || "").trim().match(/^(\d+(?:[.,]\d+)?)\s*(.*)$/);
+  return m ? { n: Number(m[1].replace(",", ".")), unit: m[2] } : null;
+}
+function qtyText(n, unit) { return fmtNum(n) + (unit ? " " + unit : ""); }
+
+/* Only part of it in the shop: tick what was got, the rest stays on the list as its own
+   item. Got everything = a plain tick. */
+function partialPanel(it) {
+  const q = parseQty(it.quantity);
+  const got = el("input", { type: "number", min: "0", step: "1", value: String(q.n), inputMode: "decimal" });
+  const minus = el("button", { textContent: "−" });
+  const plus = el("button", { textContent: "+" });
+  const of = el("span", { className: "of", textContent: t("partial.of", { total: qtyText(q.n, q.unit) }) });
+  const info = el("div", { className: "hint" });
+  const ok = el("button", { className: "primary", textContent: t("partial.tick") });
+  const cancel = el("button", { textContent: t("common.cancel") });
+  const value = () => Math.max(0, Number(String(got.value).replace(",", ".")) || 0);
+  const update = () => {
+    const v = value();
+    info.textContent = v > 0 && v < q.n
+      ? t("partial.rest", { rest: qtyText(q.n - v, q.unit) }) : "";
+    ok.disabled = !(v > 0);
+  };
+  minus.onclick = () => { got.value = String(Math.max(0, value() - 1)); update(); };
+  plus.onclick = () => { got.value = String(Math.min(q.n, value() + 1)); update(); };
+  got.oninput = update;
+  ok.onclick = () => withBusy(ok, async () => {
+    const v = value();
+    OPEN_PANEL = null;
+    if (v >= q.n) {
+      await api("items/" + it.id, { method: "PATCH", body: { done: true } });
+      return;
+    }
+    const r = await api("items/" + it.id + "/partial", { method: "POST",
+      body: { got: qtyText(v, q.unit), rest: qtyText(q.n - v, q.unit) } });
+    toast(t("partial.done", { got: qtyText(v, q.unit), rest: qtyText(q.n - v, q.unit) }), false,
+      r.undo ? { label: t("reply.undo"), fn: () => api("undo/" + r.undo, { method: "POST" }).catch((e) => toast(e.message, true)) } : null);
+  });
+  cancel.onclick = () => { OPEN_PANEL = null; drawList(); };
+  update();
+  return el("div", { className: "panel" },
+    el("h3", { textContent: t("partial.title") }),
+    el("div", { className: "stepper" }, minus, got, plus, of), info,
+    el("div", { className: "buttons" }, ok, cancel));
+}
+
+async function toggle(it) {
+  it.done = !it.done;               // optimistic; the live event brings the truth back
+  drawList();
+  try {
+    await api("items/" + it.id, { method: "PATCH", body: { done: it.done } });
+  } catch (e) {
+    toast(e.message, true);
+    loadList();
+  }
+}
+
+function togglePanel(it, kind) {
+  OPEN_PANEL = OPEN_PANEL && OPEN_PANEL.id === it.id && OPEN_PANEL.kind === kind ? null : { id: it.id, kind: kind };
+  drawList();
+}
+
+function field(label, control) {
+  return el("div", { className: "field" }, el("label", { textContent: label }), control);
+}
+
+function editPanel(it) {
+  const name = el("input", { type: "text", value: it.name });
+  const qty = el("input", { type: "text", value: it.quantity });
+  const sec = el("select");
+  for (const s of CONFIG.sections) sec.append(el("option", { value: s, textContent: s }));
+  sec.value = CONFIG.sections[sectionOrder(it.section)];
+  const note = el("input", { type: "text", value: it.note });
+  const save = el("button", { className: "primary", textContent: t("item.save") });
+  const del = el("button", { className: "danger", textContent: t("item.delete") });
+  const cancel = el("button", { textContent: t("common.cancel") });
+  save.onclick = () => withBusy(save, async () => {
+    await api("items/" + it.id, { method: "PATCH",
+      body: { name: name.value, quantity: qty.value, section: sec.value, note: note.value } });
+    OPEN_PANEL = null;
+  });
+  del.onclick = () => deleteItem(it);
+  cancel.onclick = () => { OPEN_PANEL = null; drawList(); };
+  return el("div", { className: "panel" },
+    field(t("item.name"), name), field(t("item.quantity"), qty),
+    field(t("item.section"), sec), el("div", { className: "hint", textContent: t("item.sectionHint") }),
+    field(t("item.note"), note),
+    el("div", { className: "buttons" }, save, del, cancel));
+}
+
+/* ---- Commands: typed or spoken ---------------------------------------------------------
+
+   With an AI, whatever is typed or said is a command for the whole app ("milk and eggs",
+   "got the bread", "the screws go on the DIY list", "do we still have rice?"). The server runs
+   it at once and answers with one line and an undo. Without an AI, every comma or line is an
+   item for the current list. */
+
+function setStatus(msg) { $("#status").textContent = msg || ""; }
+
+let CONVO = [];                  // the last exchanges, so "and eggs too" or an answer makes sense
+let SPEAK = store("shopping.speak") === "1";
+
+function showReply(opts) {
+  const host = $("#reply");
+  host.textContent = "";
+  if (!opts) return;
+  const box = el("div", { className: "reply" + (opts.question ? " question" : "") });
+  const text = el("div", { className: "text" });
+  if (opts.heard) text.append(el("div", { className: "heard", textContent: "„" + opts.heard + "“" }));
+  if (opts.busy) text.append(el("span", { className: "spin" }), t("input.thinking"));
+  if (opts.text) text.append(el("div", { textContent: opts.text }));
+  // Undo takes back everything except a booking into the pantry; say so where it matters.
+  if (opts.booked) text.append(el("div", { className: "hint", textContent: t("reply.bookedNoUndo") }));
+  for (const p of opts.inPantry || []) {
+    text.append(el("div", { className: "pill", textContent:
+      t("pantry.inStock", { amount: fmtAmount(p.in_stock, p.units) + " " + p.name }) }));
+  }
+  box.append(text);
+  if (opts.undo) {
+    const undo = el("button", { textContent: t("reply.undo") });
+    undo.onclick = () => withBusy(undo, async () => {
+      await api("undo/" + opts.undo, { method: "POST" });
+      CONVO = [];
+      showReply({ text: t("reply.undone") });
+    });
+    box.append(undo);
+  }
+  if (!opts.busy) {
+    const close = el("button", { className: "iconbtn small", title: t("common.close") });
+    close.innerHTML = icon("close", 20);
+    close.onclick = () => showReply(null);
+    box.append(close);
+  }
+  host.append(box);
+}
+
+async function speak(text) {
+  if (!SPEAK || !CONFIG.features.tts || !text) return;
+  try {
+    const r = await fetch("api/speak", { method: "POST", headers: { "Content-Type": "application/json" },
+                                         body: JSON.stringify({ text: text }) });
+    if (!r.ok) return;
+    const url = URL.createObjectURL(await r.blob());
+    const audio = new Audio(url);
+    audio.onended = () => URL.revokeObjectURL(url);
+    await audio.play();
+  } catch (e) { /* reading aloud is a convenience; the reply is on screen anyway */ }
+}
+
+async function runCommand(text, heard) {
+  text = text.trim();
+  if (!text) return;
+  if (!CONFIG.features.ai) {
+    const items = text.split(/[,\n;]+/).map((s) => s.trim()).filter(Boolean).map((s) => ({ name: s }));
+    await api("lists/" + CURRENT + "/items", { method: "POST", body: { items: items } });
+    return;
+  }
+  showReply({ heard: heard, busy: true });
+  let r;
+  try {
+    r = await api("command", { method: "POST", body: { text: text, list: CURRENT, context: CONVO } });
+  } catch (e) {
+    showReply({ heard: heard, text: e.message });
+    throw e;
+  }
+  CONVO = CONVO.concat([{ role: "person", text: text }, { role: "assistant", text: r.reply }]).slice(-4);
+  if (r.show_list && r.show_list !== CURRENT) {
+    await loadLists();
+    switchTo(r.show_list);
+    showTab("list");
+  }
+  showReply({ heard: heard, text: r.reply, undo: r.undo, question: r.question, inPantry: r.in_pantry, booked: r.booked });
+  speak(r.reply);
+}
+
+const input = $("#text");
+/* The typing line is opened from the bar (Type) and goes away after sending; voice is the main
+   way in, so the list keeps the room the rest of the time. */
+// No focus(): that pops the keyboard up at once, also on the way to closing it again. The
+// person taps into the field when they want to type.
+function showType() {
+  $("#typebar").hidden = false;
+}
+// `force`: the centre button closes it even with text in it; the text stays for next time.
+// Without force (a tap on the list) only an empty line closes.
+function hideType(force) {
+  if (input.value.trim() && !force) return;
+  $("#typebar").hidden = true;
+  input.blur();
+}
+// A tap on the list beside it closes it too, as long as nothing has been typed.
+$("main").addEventListener("pointerdown", () => { if (!$("#typebar").hidden) hideType(); });
+function sendTyped() {
+  const text = input.value;
+  if (!text.trim()) return;
+  input.value = "";
+  grow();
+  hideType();
+  runCommand(text).catch((e) => { input.value = text; grow(); toast(e.message, true); });
+}
+function grow() {
+  input.style.height = "auto";
+  input.style.height = Math.min(input.scrollHeight + 2, 132) + "px";
+  // Scrolling only once the text is taller than the line may grow. Before that, a fraction of a
+  // pixel of rounding on the phone drew a grey scrollbar strip at the right edge.
+  input.style.overflowY = input.scrollHeight > 130 ? "auto" : "hidden";
+  $("#send").disabled = !input.value.trim();
+}
+input.oninput = grow;
+// Enter sends, Shift+Enter is a new line; on phones the keyboard's send key does the same.
+input.onkeydown = (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendTyped(); } };
+$("#send").onclick = sendTyped;
+
+/* Dictation. The browser records, downsamples to 16 kHz mono WAV (what whisper wants anyway, and
+   a tenth of the upload), and posts it to the server, which passes it to the speech service.
+   The microphone needs HTTPS (or localhost). */
+let REC = null;
+
+function wav16k(chunks, rate) {
+  let n = 0;
+  for (const c of chunks) n += c.length;
+  const all = new Float32Array(n);
+  let o = 0;
+  for (const c of chunks) { all.set(c, o); o += c.length; }
+  const factor = rate / 16000, len = Math.floor(n / factor);
+  const buf = new ArrayBuffer(44 + len * 2), v = new DataView(buf);
+  const str = (p, s) => { for (let i = 0; i < s.length; i++) v.setUint8(p + i, s.charCodeAt(i)); };
+  str(0, "RIFF"); v.setUint32(4, 36 + len * 2, true); str(8, "WAVE"); str(12, "fmt ");
+  v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+  v.setUint32(24, 16000, true); v.setUint32(28, 32000, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true);
+  str(36, "data"); v.setUint32(40, len * 2, true);
+  for (let i = 0; i < len; i++) {
+    // Mean over the window instead of single samples: a cheap low-pass against aliasing.
+    const a = Math.floor(i * factor), b = Math.min(n, Math.floor((i + 1) * factor));
+    let sum = 0;
+    for (let j = a; j < b; j++) sum += all[j];
+    const x = Math.max(-1, Math.min(1, b > a ? sum / (b - a) : 0));
+    v.setInt16(44 + i * 2, x < 0 ? x * 0x8000 : x * 0x7fff, true);
+  }
+  return buf;
+}
+
+/* The round centre button has two modes, switched by a long press and remembered per device:
+     speak  tap = start recording, tap again = stop and run it
+     type   tap = open the typing line, tap again = close it
+   Without a speech service it is always "type". */
+let MODE = "speak";
+let LONG_PRESS = null, LONG_DONE = false;
+function setMode(mode, announce) {
+  MODE = CONFIG.features.speech ? mode : "type";
+  store("shopping.mode", MODE);
+  $("#mic").innerHTML = icon(MODE === "type" ? "keyboard" : "mic", 30);
+  $("#mic").title = t(MODE === "type" ? "nav.type" : "nav.speak");
+  if (MODE === "speak") hideType(true);
+  if (announce) toast(t(MODE === "type" ? "mode.type" : "mode.speak"));
+}
+$("#mic").addEventListener("pointerdown", () => {
+  LONG_DONE = false;
+  if (REC || !CONFIG.features.speech) return;
+  LONG_PRESS = setTimeout(() => {
+    LONG_DONE = true;
+    if (navigator.vibrate) navigator.vibrate(15);
+    setMode(MODE === "type" ? "speak" : "type", true);
+  }, 500);
+});
+for (const ev of ["pointerup", "pointerleave", "pointercancel"]) {
+  $("#mic").addEventListener(ev, () => clearTimeout(LONG_PRESS));
+}
+$("#mic").addEventListener("contextmenu", (e) => e.preventDefault());
+
+$("#mic").onclick = async () => {
+  const mic = $("#mic");
+  if (LONG_DONE) { LONG_DONE = false; return; }        // the long press switched the mode
+  if (MODE === "type") { if ($("#typebar").hidden) showType(); else hideType(true); return; }
+  if (REC) {
+    const r = REC;
+    REC = null;
+    r.proc.disconnect(); r.src.disconnect();
+    r.stream.getTracks().forEach((tr) => tr.stop());
+    r.ctx.close();
+    clearInterval(r.watch);
+    mic.classList.remove("on");
+    showReply({ text: t("input.transcribing") });
+    mic.disabled = true;
+    let heard = "";
+    try {
+      const res = await api("transcribe", { method: "POST", body: new Blob([wav16k(r.chunks, r.rate)]), type: "audio/wav" });
+      heard = (res.text || "").trim();
+      if (!heard) showReply({ text: t("input.nothingHeard") });
+    } catch (e) {
+      showReply({ text: e.message });
+    } finally {
+      mic.disabled = false;
+    }
+    // Spoken = meant: it runs straight away, the reply line has the undo.
+    if (heard) await runCommand(heard, heard).catch(() => {});
+    return;
+  }
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true } });
+  } catch (e) {
+    return toast(t("input.micDenied"), true);
+  }
+  const ctx = new (window.AudioContext || window.webkitAudioContext)();
+  const src = ctx.createMediaStreamSource(stream);
+  const proc = ctx.createScriptProcessor(4096, 1, 1);
+  const chunks = [];
+  let lastSound = Date.now();
+  proc.onaudioprocess = (e) => {
+    const data = new Float32Array(e.inputBuffer.getChannelData(0));
+    chunks.push(data);
+    let sum = 0;
+    for (let i = 0; i < data.length; i++) sum += data[i] * data[i];
+    if (Math.sqrt(sum / data.length) > 0.015) lastSound = Date.now();
+  };
+  src.connect(proc);
+  proc.connect(ctx.destination);
+  // Like the term app: after 10 s of silence the recording ends by itself and is recognised.
+  const watch = setInterval(() => { if (REC && Date.now() - lastSound > 10000) mic.click(); }, 250);
+  REC = { stream: stream, ctx: ctx, src: src, proc: proc, chunks: chunks, rate: ctx.sampleRate, watch: watch };
+  mic.classList.add("on");
+  showReply({ text: t("input.recording") });
+};
+
+/* ---- Pantry bridge ----------------------------------------------------------------------- */
+
+function pantryBadge(it) {
+  const p = it.pantry;
+  if (p && p.state === "booked") {
+    return el("div", { className: "pill", textContent: "✓ " + t("pantry.booked", { amount: fmtAmount(p.amount, p.units) }) + " · " + p.part_name });
+  }
+  if (p && p.state === "skipped") {
+    const b = el("button", { className: "pill button", textContent: t("pantry.skipped") + " · " + t("pantry.undoSkip") });
+    b.onclick = () => withBusy(b, () => api("items/" + it.id + "/pantry", { method: "DELETE" }));
+    return b;
+  }
+  const b = el("button", { className: "pill button", textContent: t("pantry.ask") });
+  b.onclick = () => togglePanel(it, "pantry");
+  return b;
+}
+
+/* Booking a bought item: find the article, pick the product, say how many of the packs go into
+   the pantry (the rest stays in the kitchen and is not booked), confirm. The server applies the
+   pantry app's rules (pack content, merging only on equal best-before dates). */
+function pantryPanel(it) {
+  const panel = el("div", { className: "panel" }, el("h3", { textContent: t("pantry.title") }));
+  const search = el("input", { type: "search", value: it.name, placeholder: t("pantry.searchPlaceholder") });
+  const hits = el("div", { className: "hits" });
+  const form = el("div");
+  panel.append(field(t("pantry.search"), search), hits, form);
+
+  const skip = el("button", { textContent: t("pantry.skip") });
+  skip.onclick = () => withBusy(skip, async () => {
+    await api("items/" + it.id + "/pantry", { method: "POST", body: { skip: true } });
+    OPEN_PANEL = null;
+  });
+  const cancel = el("button", { textContent: t("common.cancel") });
+  cancel.onclick = () => { OPEN_PANEL = null; drawList(); };
+  const foot = el("div", { className: "buttons" }, skip, cancel);
+  if (CONFIG.pantry_url) {
+    foot.append(el("a", { className: "link", href: CONFIG.pantry_url, target: "_blank",
+                          rel: "noopener", textContent: t("pantry.openApp") }));
+  }
+  panel.append(foot);
+
+  let timer = null;
+  const run = async () => {
+    hits.textContent = "";
+    form.textContent = "";
+    const q = search.value.trim();
+    if (!q) return;
+    let rows;
+    try { rows = await api("pantry/search?q=" + encodeURIComponent(q)); }
+    catch (e) { return toast(e.message, true); }
+    if (!rows.length) return hits.append(el("div", { className: "hint", textContent: t("pantry.noHits") }));
+    for (const p of rows) {
+      const b = el("button", { textContent: p.name + "  ·  " + fmtAmount(p.in_stock, p.units) });
+      b.onclick = () => {
+        hits.querySelectorAll("button").forEach((x) => x.classList.remove("on"));
+        b.classList.add("on");
+        openPart(p.pk);
+      };
+      hits.append(b);
+    }
+    if (rows.length === 1) hits.querySelector("button").click();
+  };
+  search.oninput = () => { clearTimeout(timer); timer = setTimeout(run, 300); };
+
+  // A requirement ("Reis") gets a product picker first; stock is only ever booked onto products.
+  async function openPart(pk) {
+    form.textContent = "";
+    let part;
+    try { part = await api("pantry/part/" + pk); }
+    catch (e) { return toast(e.message, true); }
+    if (!part.template) return productForm(part, form);
+    if (!part.variants.length) return form.append(el("div", { className: "hint", textContent: t("pantry.noHits") }));
+    const pick = el("select");
+    for (const v of part.variants) pick.append(el("option", { value: String(v.pk), textContent: v.name }));
+    const detail = el("div");
+    const load = async () => {
+      detail.textContent = "";
+      try { productForm(await api("pantry/part/" + pick.value), detail); }
+      catch (e) { toast(e.message, true); }
+    };
+    pick.onchange = load;
+    form.append(field(t("pantry.pickVariant"), pick), detail);
+    load();
+  }
+
+  function productForm(part, host) {
+    const units = part.units;
+    host.append(el("div", { className: "chosen", textContent: part.name + "  ·  " + fmtAmount(part.in_stock, units) }));
+    const packets = el("input", { type: "number", min: "0", step: "1", value: String(firstNumber(it.quantity)) });
+    const pack = el("input", { type: "number", min: "0", step: "0.001", value: part.pack != null ? String(part.pack) : "" });
+    const sum = el("div", { className: "hint" });
+    const loc = el("select");
+    for (const l of part.locations) loc.append(el("option", { value: String(l.pk), textContent: l.path }));
+    if (part.location) loc.value = String(part.location);
+    const mhd = el("input", { type: "date", value: part.default_expiry ? isoInDays(part.default_expiry) : "" });
+    const recalc = () => {
+      sum.textContent = units && Number(pack.value) > 0
+        ? t("pantry.sum", { n: fmtNum(packets.value), pack: fmtAmount(pack.value, units), total: fmtAmount(Number(packets.value) * Number(pack.value), units) })
+        : "";
+    };
+    packets.oninput = recalc;
+    pack.oninput = recalc;
+    recalc();
+    const book = el("button", { className: "primary", textContent: t("pantry.book") });
+    book.onclick = () => withBusy(book, async () => {
+      await api("items/" + it.id + "/pantry", { method: "POST", body: {
+        part: part.pk, packets: Number(packets.value), pack: units ? Number(pack.value) : null,
+        location: Number(loc.value), expiry: mhd.value || null } });
+      OPEN_PANEL = null;
+    });
+    host.append(field(t("pantry.packets"), packets),
+                el("div", { className: "hint", textContent: t("pantry.packetsHint") }));
+    if (units) host.append(field(t("pantry.packContent", { units: units }), pack));
+    host.append(sum, field(t("pantry.location"), loc), field(t("pantry.bestBefore"), mhd),
+                el("div", { className: "buttons" }, book));
+  }
+
+  // The AI already pointed at an article when the item was added: offer that one first.
+  if (it.pantry_hint) openPart(it.pantry_hint);
+  else run();
+  return panel;
+}
+
+/* ---- Live updates ------------------------------------------------------------------------ */
+
+function live() {
+  const es = new EventSource("api/events");
+  es.onmessage = (e) => {
+    let msg = {};
+    try { msg = JSON.parse(e.data); } catch (err) { return; }
+    loadLists();
+    if (msg.list === CURRENT || msg.list == null) loadList();
+  };
+  es.onopen = () => { setStatus(""); loadLists(); loadList(); };
+  es.onerror = () => setStatus(t("live.lost"));
+  // EventSource reconnects by itself (retry: 3000 from the server).
+}
+
+/* ---- Start ------------------------------------------------------------------------------- */
+
+async function start() {
+  try {
+    CONFIG = await api("config");
+  } catch (e) {
+    // No server: say so on the curtain instead of leaving it spinning.
+    $("#boot .ring").replaceWith(el("div", { className: "msg", textContent: e.message }));
+    return;
+  }
+  LANG = CONFIG.language || "en";
+  document.documentElement.lang = LANG;
+  TEXTS = await fetch("i18n/" + LANG + ".json").then((r) => r.json()).catch(() => ({}));
+  document.title = t("app.title");
+  $("#text").placeholder = CONFIG.features.ai ? t("input.placeholderAi") : t("input.placeholder");
+  $("#send").title = t("input.send");
+  $("#send").innerHTML = icon("send", 22);
+  $("#mark").innerHTML = icon("cart");
+  $("#appname").textContent = t("app.title");
+  $("#ver").textContent = CONFIG.version;
+  $("#settings").innerHTML = icon("settings");
+  $("#settings").title = t("settings.page");
+  $("#menu").innerHTML = icon("more");
+  $("#drop").innerHTML = icon("drop", 22);
+  setMode(store("shopping.mode") === "type" ? "type" : "speak");
+  navButton("nav-list", "checklist", t("nav.list")).onclick = () => showTab("list");
+  navButton("nav-history", "history", t("nav.history")).onclick = () => showTab("history");
+  navButton("nav-pantry", "box", t("nav.pantry")).onclick = () => showTab("pantry");
+  $("#nav-pantry").title = t("pantry.missingButton");
+  // Kept in the grid even without a pantry, so the microphone stays in the middle.
+  $("#nav-pantry").style.visibility = CONFIG.features.pantry ? "" : "hidden";
+  navButton("nav-lists", "list", t("nav.lists")).onclick = () => showTab("lists");
+  $("#switch").title = t("lists.title");
+  $("#menu").title = t("menu.title");
+  // The list ends above the bar whatever its height (reply line, three lines of text).
+  const bar = $(".bar");
+  const pad = () => {
+    const h = bar.offsetHeight;
+    $("main").style.paddingBottom = (h + 16) + "px";
+    document.documentElement.style.setProperty("--bar-h", (h + 8) + "px");
+  };
+  new ResizeObserver(pad).observe(bar);
+  pad();
+  if (!DEVICE) { document.body.classList.add("ready"); await askDevice(); }
+  await loadLists();
+  await loadList();
+  showTab("list");
+  document.body.classList.add("ready");       // the list is drawn with its data
+  armHistory();
+  live();
+  // Once per device: the long press is not something anyone finds by themselves.
+  if (CONFIG.features.speech && !store("shopping.hintMode")) {
+    toast(t("hint.modeSwitch"));
+    store("shopping.hintMode", "1");
+  }
+}
+
+start();
+</script>
+</body>
+</html>

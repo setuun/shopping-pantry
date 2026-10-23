@@ -1,0 +1,24 @@
+# shopping-pantry as a system service. Expects the repository at /opt/shopping-pantry,
+# the config at /etc/shopping-pantry/shopping.json and, optionally, secrets in
+# /etc/shopping-pantry/secrets.env (SHOPPING_AI_API_KEY, SHOPPING_SPEECH_PASSWORD,
+# SHOPPING_PANTRY_PASSWORD or SHOPPING_PANTRY_TOKEN). See INSTALL.md.
+[Unit]
+Description=shopping-pantry (shared shopping list)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=/usr/bin/python3 /opt/shopping-pantry/server/shopping_pantry.py --config /etc/shopping-pantry/shopping.json
+EnvironmentFile=-/etc/shopping-pantry/secrets.env
+# The database lives in /var/lib/shopping-pantry (set "database" accordingly).
+DynamicUser=yes
+StateDirectory=shopping-pantry
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

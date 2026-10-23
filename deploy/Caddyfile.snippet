@@ -1,0 +1,7 @@
+# shopping-pantry behind Caddy. HTTPS is not optional: browsers only allow the microphone
+# (dictation) on a secure origin, and the app is meant for phones.
+shopping.example.lan {
+	reverse_proxy 127.0.0.1:8093
+}
+# Server-Sent Events (/api/events) need no extra setting: Caddy flushes text/event-stream
+# responses immediately. Behind nginx, turn proxy_buffering off for /api/events.

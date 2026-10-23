@@ -1,0 +1,31 @@
+{
+  "language": "de",
+  "listen": "127.0.0.1:8093",
+  "database": "/var/lib/shopping-pantry/shopping.db",
+
+  "ai": {
+    "api": "openai",
+    "url": "http://127.0.0.1:11434/v1",
+    "model": "qwen3:8b",
+    "api_key": "",
+    "timeout": 60,
+    "extra": {}
+  },
+
+  "speech": {
+    "url": "https://whisper.example.lan/v1/audio/transcriptions",
+    "tts_url": "",
+    "language": "de",
+    "user": "",
+    "password": ""
+  },
+
+  "pantry": {
+    "inventree_url": "http://127.0.0.1:8080",
+    "app_url": "https://inventree.example.lan/vorrat/",
+    "user": "shopping",
+    "password": "",
+    "book_location": "Keller/Krisenvorrat",
+    "pack_parameter": "Inhalt"
+  }
+}
