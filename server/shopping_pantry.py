@@ -35,7 +35,7 @@ from datetime import date, datetime, timedelta, timezone
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-VERSION = "0.7.1"
+VERSION = "0.7.2"
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 APP_DIR = os.path.normpath(os.path.join(HERE, "..", "app"))
@@ -312,6 +312,8 @@ Actions (refer to items and lists by their number from the state):
   {{"type": "create_list", "ref": "new1", "name": "..."}}   later actions may use "list": "new1"
   {{"type": "rename_list", "list": 3, "name": "..."}}
   {{"type": "clear_done", "list": 1}}
+  {{"type": "clear_list", "list": 1}}         empty the whole list, open items too ("Liste leeren",
+                                              "doch nicht einkaufen"); only when asked for
   {{"type": "show_list", "list": 3}}          switch the person's screen to that list
 {pantry_actions}
 Rules:
@@ -880,6 +882,24 @@ class App:
         self.changed(lid)
         return {"removed": n}
 
+    def clear_list(self, lid):
+        """Empty a list, e.g. when the shopping trip is called off. Open items are deleted (they
+        were never bought, so they stay out of the history); done ones are cleared as above.
+        Returns the undo steps."""
+        rows = self.store.query("SELECT * FROM items WHERE list_id = ? AND cleared = 0", (lid,))
+        self.store.execute("DELETE FROM items WHERE list_id = ? AND done = 0 AND cleared = 0", (lid,))
+        self.store.execute("UPDATE items SET cleared = 1 WHERE list_id = ? AND done = 1", (lid,))
+        return [{"op": "restore_item", "row": row} for row in rows]
+
+    def post_clear_list(self, req, lid):
+        ops = self.clear_list(lid)
+        undo_id = None
+        if ops:
+            undo_id, _ = self.store.execute("INSERT INTO undo (created_at, ops) VALUES (?, ?)",
+                                            (now_iso(), json.dumps(ops)))
+        self.changed(lid)
+        return {"removed": len(ops), "undo": undo_id}
+
     def get_history(self, req):
         """Bought items of the last 90 days, newest first, for the history view. The phone
         groups them by its own local day; the server does not know the household's time zone."""
@@ -1130,6 +1150,10 @@ class App:
                     self.store.execute("UPDATE items SET cleared = 1 WHERE list_id = ?"
                                        " AND done = 1", (lid,))
                     touched.add(lid)
+                elif kind == "clear_list":
+                    lid = list_of(a.get("list"))
+                    ops.extend(self.clear_list(lid))
+                    touched.add(lid)
                 elif kind == "show_list":
                     show = list_of(a.get("list"))
                 elif kind in ("book", "pantry_skip") and self.pantry:
@@ -1306,6 +1330,7 @@ ROUTES = [
     ("PATCH", r"/api/lists/(\d+)", "patch_list"),
     ("POST", r"/api/lists/(\d+)/items", "post_items"),
     ("POST", r"/api/lists/(\d+)/clear-done", "post_clear_done"),
+    ("POST", r"/api/lists/(\d+)/clear", "post_clear_list"),
     ("POST", r"/api/command", "post_command"),
     ("POST", r"/api/undo/(\d+)", "post_undo"),
     ("POST", r"/api/speak", "post_speak"),

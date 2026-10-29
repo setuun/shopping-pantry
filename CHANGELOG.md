@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.7.2 (2026-10-29)
+
+- **Empty a list** (⋯ → "Empty list", or by voice: "Liste leeren"): for a list made and then
+  not shopped. Open items are deleted and stay out of the history, bought ones are cleared as
+  before; asks first, and the toast has an undo. New endpoint `POST /api/lists/N/clear`, new
+  AI action `clear_list`.
+
 ## 0.7.1 (2026-10-23) — first public release
 
 - No grey scrollbar strip at the right of the typing line (it only scrolls once taller than its

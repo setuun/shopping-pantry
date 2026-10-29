@@ -655,6 +655,19 @@ $("#menu").onclick = () => {
   if (LIST && LIST.items.some((i) => i.done)) {
     pop.append(item(t("menu.clearDone"), () => api("lists/" + CURRENT + "/clear-done", { method: "POST" }).catch((e) => toast(e.message, true))));
   }
+  // Emptying: for a list made and then not shopped. Open items go (not bought, so not in the
+  // history), done ones are cleared as above; the toast has an undo.
+  if (LIST && LIST.items.length) {
+    pop.append(item(t("menu.clearList"), () => {
+      ask(t("menu.clearListConfirm", { name: listName(l), n: LIST.items.length }), t("menu.clearList"), async () => {
+        const r = await api("lists/" + l.id + "/clear", { method: "POST" });
+        toast(t("menu.clearListDone", { name: listName(l) }), false, r.undo ? {
+          label: t("reply.undo"),
+          fn: () => api("undo/" + r.undo, { method: "POST" }).catch((e) => toast(e.message, true)),
+        } : null);
+      });
+    }, "danger"));
+  }
   pop.append(item(t("list.rename"), () => {
     const box = sheet(t("list.rename"), "", nameForm(l.name, t("list.default"), t("item.save"), async (name) => {
       await api("lists/" + l.id, { method: "PATCH", body: { name: name } });
