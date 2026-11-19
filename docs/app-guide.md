@@ -10,6 +10,10 @@ for or found wrong at least once; read it before building a screen.
   Server, if any: Python standard library only. Everything vendored in the repo.
 - Phone first (390 px wide is the test size), works on a desktop too.
 - Every word on screen through `t("area.key")`, texts in `app/i18n/*.json`, a check script.
+- **This guide says how it looks and behaves; how it is built comes from Google Chrome's Modern
+  Web Guidance** (skill in `.claude/skills/modern-web-guidance`, pinned, telemetry off). Native
+  elements before hand-written JS (a sheet is a `<dialog>`, a menu a `popover`), as long as the
+  behaviour below is kept. Browser target Baseline 2024; newer features only with a fallback.
 
 ## Look
 
@@ -64,11 +68,11 @@ for or found wrong at least once; read it before building a screen.
 
 | Need | Pattern |
 |---|---|
-| ⋯ (more actions) | small menu dropping down from the button, headed with what it acts on; closes on a tap outside |
-| Choosing among things (lists) | sheet from the bottom with a handle; the handle **must** drag the sheet down to close |
+| ⋯ (more actions) | small menu dropping down from the button, headed with what it acts on; closes on a tap outside; an `auto` popover (shown with `source:` the button, so ⋯ again closes it) |
+| Choosing among things (lists) | sheet from the bottom with a handle; the handle **must** drag the sheet down to close. A modal `<dialog closedby="any">`: Esc, back and a tap outside slide it down (via `cancel`), the page behind cannot scroll (`overscroll-behavior` on dialog and `::backdrop`) |
 | Yes / no, a name to type | the same bottom sheet. **Never** `alert`, `confirm`, `prompt` |
 | Long content (history, settings) | a tab between the bars, not a page over everything |
-| Feedback after an action | toast at the bottom, above the input bar; with **Undo** when something changed |
+| Feedback after an action | toast at the bottom, above the input bar; with **Undo** when something changed. A `manual` popover, or an open sheet covers it |
 | Delete an item | swipe left over a red "Delete" strip, plus "Delete" in the item's form; both with undo |
 | Edit an item | tap the row: a form opens inline below it |
 | Done / bought | round check at the left; done items grey and struck through, in their own group |

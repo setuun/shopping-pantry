@@ -194,6 +194,9 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); ou
   max-width: 600px; margin: 0 auto; background: var(--toast-bg); color: var(--toast-text);
   border: 1px solid var(--toast-line); box-shadow: 0 6px 20px rgba(0,0,0,.3); padding: 12px 14px;
   border-radius: 10px; z-index: 20; }
+/* Shown as a manual popover where the browser has one, so it lands in the top layer ABOVE an
+   open sheet (a modal <dialog> covers everything else). Undo the popover's UA box. */
+.toast[popover] { inset: auto 16px var(--bar-h, 100px) 16px; width: auto; overflow: visible; }
 .toast.error { background: var(--error-bg); color: #fff; border-color: transparent; }
 .toast { display: flex; align-items: center; gap: 12px; }
 .toast span { flex: 1; }
@@ -218,9 +221,13 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); ou
 .past .meta { color: var(--muted); font-size: .85em; }
 .past button { padding: 6px 10px; font-size: .9em; white-space: nowrap; }
 .empty .big { font-size: 1.1em; color: var(--text); margin-bottom: 6px; }
-/* Bottom sheets: the list switcher and the menu. */
-.sheet { position: fixed; inset: 0; z-index: 30; background: rgba(0,0,0,.45);
-  display: flex; align-items: flex-end; justify-content: center; }
+/* Bottom sheets (questions, names, choices): a modal <dialog>, so the browser makes the page
+   behind inert, keeps the focus inside, names it for screen readers, and closes it on Esc and
+   on Android's back gesture. The <dialog> is only the frame at the bottom; the card is its div.
+   No `display` on the dialog itself: that would override its closed state. */
+dialog.sheet { position: fixed; inset: auto 0 0 0; margin: 0 auto; padding: 0; border: 0;
+  width: 100%; max-width: 640px; max-height: 85vh; background: transparent; color: var(--text);
+  overflow: hidden; }
 .sheet > div { background: var(--card); width: 100%; max-width: 640px; max-height: 85vh; overflow-y: auto;
   border-radius: 18px 18px 0 0; padding: 8px 16px calc(env(safe-area-inset-bottom) + 16px); }
 /* The handle is a promise: the sheet can be dragged down to close. The top strip (handle and
@@ -229,15 +236,25 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); ou
 .sheet .grab { width: 40px; height: 4px; border-radius: 2px; background: var(--line); margin: 4px auto 10px; }
 .sheet > div { transition: transform .2s ease-out; }
 .sheet > div.dragging { transition: none; }
+/* Slide in from below and fade the backdrop in; closing is the same slide back (sheet()). */
+@starting-style { dialog.sheet[open] > div { transform: translateY(100%); } }
+dialog.sheet::backdrop, dialog.dialog::backdrop { background: rgba(0,0,0,.45);
+  transition: background-color .2s ease-out; }
+@starting-style { dialog[open]::backdrop { background-color: transparent; } }
+@media (prefers-reduced-motion: reduce) { .sheet > div { transition: none; } }
 /* Overlays keep scrolling to themselves. Without this, a wipe on the dark backdrop (or past the
    end of a sheet's own list) scrolled the list behind it: measured 2026-11-19, 400 -> 2400 px
-   under the menu, a sheet and a dialog alike. overflow: hidden makes the fixed backdrop a scroll
-   container, which overscroll-behavior needs to apply at all (Chrome 144+, Firefox 150+; older
-   browsers simply keep the old behaviour). Not overflow/position on body: that would jump the page. */
-.sheet, .dialog, .pop-shade { overflow: hidden; overscroll-behavior: contain; }
+   under the menu, a sheet and a dialog alike. ::backdrop is no scroll container unless given
+   overflow, and overscroll-behavior needs one (Chrome 144+, Firefox 150+; older browsers keep
+   the old behaviour). Not overflow/position on body: that would jump the page. */
+dialog:modal, .pop-shade { overscroll-behavior: contain; }
+dialog::backdrop, .pop-shade { overflow: hidden; overscroll-behavior: contain; }
 .sheet > div { overscroll-behavior: contain; }
-/* The ⋯ menu: a small card that drops down from the button, as on Android. */
+/* The ⋯ menu: a small card that drops down from the button, as on Android. An auto popover where
+   the browser has one (it closes on a tap outside, Esc and back by itself); otherwise a
+   transparent shade catches the tap outside. Undo the popover's UA box (inset 0, margin auto). */
 .pop-shade { position: fixed; inset: 0; z-index: 30; }
+.pop[popover] { inset: auto 12px auto auto; margin: 0; color: var(--text); overflow: visible; }
 .pop { position: fixed; right: 12px; min-width: 250px; max-width: calc(100vw - 24px); z-index: 31;
   background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 6px;
   box-shadow: 0 10px 30px rgba(0,0,0,.28); transform-origin: top right; animation: pop .12s ease-out; }
@@ -272,8 +289,9 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); ou
 .toggle { display: flex; align-items: center; gap: 10px; padding: 14px 12px; }
 .toggle input { width: 22px; height: 22px; flex: 0 0 22px; accent-color: var(--accent); }
 .group > * + .toggle, .group > .toggle + * { border-top: 1px solid var(--line); }
-.dialog { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: flex;
-  align-items: center; justify-content: center; z-index: 30; padding: 16px; }
+/* The device-name question: a modal <dialog> in the middle (the browser centres a modal). */
+dialog.dialog { padding: 0; border: 0; background: transparent; color: var(--text);
+  width: calc(100% - 32px); max-width: 420px; overflow: visible; }
 .dialog > div { background: var(--card); border-radius: var(--radius); padding: 16px;
   width: 100%; max-width: 420px; }
 .dialog h2 { margin: 0 0 6px; font-size: 1.15em; }
@@ -330,6 +348,13 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); ou
 /* ---- Basics ------------------------------------------------------------------------------ */
 
 const $ = (sel) => document.querySelector(sel);
+// Browser features used with a fallback (Baseline 2024 is the target, see
+// .claude/skills/modern-web-guidance): popover (Baseline 2025) for the ⋯ menu and the toast,
+// <dialog closedby> (no Safari yet) for closing a sheet by a tap outside.
+const HAS_POPOVER = Object.hasOwn(HTMLElement.prototype, "popover");
+const HAS_CLOSEDBY = "closedBy" in HTMLDialogElement.prototype;
+let OVERLAY_SEQ = 0;
+
 function el(tag, props, ...children) {
   const e = document.createElement(tag);
   Object.assign(e, props || {});
@@ -364,6 +389,8 @@ function toast(msg, error, action) {
     box.append(b);
   }
   document.body.append(box);
+  // In the top layer it stays visible above an open sheet (otherwise covered by the modal).
+  if (HAS_POPOVER) { box.popover = "manual"; box.showPopover(); }
   setTimeout(() => box.remove(), error ? 6000 : action ? 6000 : 3000);
 }
 
@@ -495,16 +522,25 @@ function askDevice() {
   return new Promise((resolve) => {
     const input = el("input", { type: "text", value: DEVICE, maxLength: 40 });
     const save = el("button", { className: "primary", textContent: t("device.save") });
-    const box = el("div", { className: "dialog" }, el("div", {},
-      el("h2", { textContent: t("device.title") }),
+    const titleId = "overlay-" + (++OVERLAY_SEQ);
+    const box = el("dialog", { className: "dialog" }, el("div", {},
+      el("h2", { textContent: t("device.title"), id: titleId }),
       el("p", { className: "hint", textContent: t("device.hint") }),
       input, el("div", { className: "buttons" }, save)));
-    // Renaming later (from the menu) can be called off; the very first name cannot.
+    box.setAttribute("aria-labelledby", titleId);
+    // Renaming later (from the menu) can be called off; the very first name cannot: Esc and
+    // back are refused, and if the browser closes it anyway (no user gesture yet), it reopens.
     if (DEVICE) {
       const cancel = el("button", { textContent: t("common.cancel") });
       cancel.onclick = () => { box.remove(); resolve(); };
       save.after(cancel);
+      box.addEventListener("cancel", () => resolve());
+    } else {
+      box.dataset.required = "";
+      box.setAttribute("closedby", "none");
+      box.addEventListener("cancel", (e) => e.preventDefault());
     }
+    box.addEventListener("close", () => { if (DEVICE) box.remove(); else box.showModal(); });
     const done = () => {
       const v = input.value.trim();
       if (!v) return input.focus();
@@ -516,6 +552,7 @@ function askDevice() {
     save.onclick = done;
     input.onkeydown = (e) => { if (e.key === "Enter") done(); };
     document.body.append(box);
+    box.showModal();
     input.focus();
   });
 }
@@ -583,14 +620,30 @@ function drawHeader() {
   $("#sub").textContent = bits.join(" · ");
 }
 
+/* A bottom sheet as a modal <dialog>. Every way to close it (Esc, Android's back gesture, a tap
+   outside, the drag) slides it down; `box.remove()` from the code closes it at once. */
 function sheet(title, hint, ...content) {
-  const head = el("div", { className: "head" }, el("div", { className: "grab" }), el("h2", { textContent: title }));
+  const titleId = "overlay-" + (++OVERLAY_SEQ);
+  const head = el("div", { className: "head" }, el("div", { className: "grab" }), el("h2", { textContent: title, id: titleId }));
   const inner = el("div", {}, head);
   if (hint) inner.append(el("p", { className: "hint", textContent: hint }));
   inner.append(...content);
-  const box = el("div", { className: "sheet" }, inner);
-  const close = () => { inner.style.transform = "translateY(100%)"; setTimeout(() => box.remove(), 180); };
-  box.onclick = (e) => { if (e.target === box) close(); };
+  const box = el("dialog", { className: "sheet" }, inner);
+  box.setAttribute("aria-labelledby", titleId);
+  box.setAttribute("closedby", "any");
+  let closing = false;
+  const close = () => {
+    if (closing) return;
+    closing = true;
+    inner.style.transform = "translateY(100%)";
+    setTimeout(() => box.close(), 180);
+  };
+  // Close requests (Esc, back gesture, closedby's tap outside) arrive as `cancel`: slide out
+  // instead. The browser may refuse preventDefault without a user gesture; then it closes at once.
+  box.addEventListener("cancel", (e) => { e.preventDefault(); close(); });
+  box.addEventListener("close", () => box.remove());
+  // No closedby (Safari): a tap on the backdrop hits the dialog itself, never the card inside.
+  if (!HAS_CLOSEDBY) box.onclick = (e) => { if (e.target === box) close(); };
   // Drag the top strip down: past a quarter of the height (or a quick flick) it closes,
   // otherwise it springs back.
   let y0 = null, t0 = 0, dy = 0;
@@ -615,6 +668,7 @@ function sheet(title, hint, ...content) {
   head.addEventListener("pointerup", end);
   head.addEventListener("pointercancel", end);
   document.body.append(box);
+  box.showModal();
   return box;
 }
 
@@ -629,7 +683,8 @@ function choice(label, count, onclick, cls) {
 /* Yes/no in the app's own style, instead of the browser's confirm(). */
 function ask(question, yesLabel, onYes) {
   const yes = el("button", { className: "primary danger-bg", textContent: yesLabel });
-  const no = el("button", { textContent: t("common.cancel") });
+  // The safe answer gets the focus (showModal focuses the first control otherwise: "yes").
+  const no = el("button", { textContent: t("common.cancel"), autofocus: true });
   const box = sheet(question, "", el("div", { className: "buttons" }, yes, no));
   no.onclick = () => box.remove();
   yes.onclick = () => withBusy(yes, async () => { await onYes(); box.remove(); });
@@ -653,10 +708,20 @@ $("#switch").onclick = () => { if (LIST_TABS.includes(TAB)) showTab("lists"); };
 $("#menu").onclick = () => {
   const l = LISTS.find((x) => x.id === CURRENT);
   if (!l) return;
-  const shade = el("div", { className: "pop-shade" });
+  const open = $(".pop");
+  if (open) { open.closeMenu(); return; }                   // ⋯ again closes it
   const pop = el("div", { className: "pop" });
-  const close = () => { shade.remove(); pop.remove(); };
-  shade.onclick = close;
+  let shade = null, close;
+  if (HAS_POPOVER) {
+    pop.popover = "auto";                                   // tap outside, Esc, back: the browser
+    pop.addEventListener("toggle", (e) => { if (e.newState === "closed") pop.remove(); });
+    close = () => { if (pop.matches(":popover-open")) pop.hidePopover(); else pop.remove(); };
+  } else {
+    shade = el("div", { className: "pop-shade" });
+    close = () => { shade.remove(); pop.remove(); };
+    shade.onclick = close;
+  }
+  pop.closeMenu = close;
   const item = (label, fn, cls) => choice(label, "", () => { close(); fn(); }, cls);
   pop.append(el("div", { className: "section", textContent: t("menu.forList", { name: listName(l) }) }));
   if (LIST && LIST.items.some((i) => i.done)) {
@@ -692,7 +757,10 @@ $("#menu").onclick = () => {
     }, "danger"));
   }
   pop.style.top = ($("#menu").getBoundingClientRect().bottom + 4) + "px";
-  document.body.append(shade, pop);
+  if (shade) document.body.append(shade);
+  document.body.append(pop);
+  // `source`: a tap on ⋯ is then not a tap "outside", so it closes the menu instead of reopening it.
+  if (HAS_POPOVER) pop.showPopover({ source: $("#menu") });
 };
 
 /* ⚙: settings of the app on this device, as a view between the bars. */
@@ -844,8 +912,10 @@ function armHistory() {
 function closeTop() {
   if (!$("#typebar").hidden) { hideType(true); return true; }
   const pop = $(".pop");
-  if (pop) { $(".pop-shade").remove(); pop.remove(); return true; }
-  const sheets = document.querySelectorAll(".sheet, .dialog");
+  if (pop) { pop.closeMenu(); return true; }
+  // Android's back gesture closes an open <dialog> itself and never gets here; the browser's
+  // back button (desktop) does. The first device name cannot be backed out of.
+  const sheets = document.querySelectorAll(".sheet, .dialog:not([data-required])");
   if (sheets.length) { sheets[sheets.length - 1].remove(); return true; }
   if (OPEN_PANEL) { OPEN_PANEL = null; drawList(); return true; }
   if (TAB !== "list") { showTab("list"); return true; }      // every tab leads back to the list

@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.7.4 (2026-11-19)
+
+- **Sheets and the device-name question are native `<dialog>`s, the ⋯ menu is a popover.** The
+  browser now makes the page behind inert, keeps the focus inside, names the sheet for screen
+  readers, and closes it on Esc and on Android's back gesture; a tap outside, Esc and back slide
+  it down like the handle does, and it slides in when it opens. A yes/no question focuses the safe
+  answer. Toasts are shown in the top layer, so an error stays visible above an open sheet.
+  Browsers without popover or `closedby` keep the old behaviour (shade, own backdrop tap).
+- The very first device name can no longer be escaped with Esc.
+
 ## 0.7.3 (2026-11-19)
 
 - **The list no longer scrolls behind an open overlay.** A wipe on the dark backdrop of a sheet
