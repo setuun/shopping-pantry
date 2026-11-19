@@ -550,7 +550,7 @@ function askDevice() {
       resolve();
     };
     save.onclick = done;
-    input.onkeydown = (e) => { if (e.key === "Enter") done(); };
+    input.onkeydown = (e) => { if (e.key === "Enter" && !e.isComposing) done(); };
     document.body.append(box);
     box.showModal();
     input.focus();
@@ -696,7 +696,7 @@ function nameForm(value, placeholder, button, onsave) {
   const save = el("button", { className: "primary", textContent: button });
   const go = () => withBusy(save, () => onsave(input.value.trim()));
   save.onclick = go;
-  input.onkeydown = (e) => { if (e.key === "Enter") go(); };
+  input.onkeydown = (e) => { if (e.key === "Enter" && !e.isComposing) go(); };
   setTimeout(() => input.focus(), 50);
   return el("div", { className: "row field" }, input, save);
 }
@@ -1336,7 +1336,9 @@ function grow() {
 }
 input.oninput = grow;
 // Enter sends, Shift+Enter is a new line; on phones the keyboard's send key does the same.
-input.onkeydown = (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendTyped(); } };
+/* Not while an input method is composing: there Enter picks the characters (Chinese, Japanese,
+   Korean keyboards), and sending then would cut the word off. */
+input.onkeydown = (e) => { if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); sendTyped(); } };
 $("#send").onclick = sendTyped;
 
 /* Dictation. The browser records, downsamples to 16 kHz mono WAV (what whisper wants anyway, and

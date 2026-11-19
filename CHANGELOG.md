@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.7.6 (2026-11-19)
+
+- **Enter no longer sends while an input method is composing** (Chinese, Japanese, Korean
+  keyboards: there Enter picks the characters). Typing line, list name and device name.
+
 ## 0.7.5 (2026-11-19)
 
 - **Back right after opening the app no longer leaves it at once.** Chrome skips history entries
