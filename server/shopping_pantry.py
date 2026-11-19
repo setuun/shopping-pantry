@@ -35,7 +35,7 @@ from datetime import date, datetime, timedelta, timezone
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-VERSION = "0.7.2"
+VERSION = "0.7.3"
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 APP_DIR = os.path.normpath(os.path.join(HERE, "..", "app"))

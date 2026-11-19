@@ -229,6 +229,13 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); ou
 .sheet .grab { width: 40px; height: 4px; border-radius: 2px; background: var(--line); margin: 4px auto 10px; }
 .sheet > div { transition: transform .2s ease-out; }
 .sheet > div.dragging { transition: none; }
+/* Overlays keep scrolling to themselves. Without this, a wipe on the dark backdrop (or past the
+   end of a sheet's own list) scrolled the list behind it: measured 2026-11-19, 400 -> 2400 px
+   under the menu, a sheet and a dialog alike. overflow: hidden makes the fixed backdrop a scroll
+   container, which overscroll-behavior needs to apply at all (Chrome 144+, Firefox 150+; older
+   browsers simply keep the old behaviour). Not overflow/position on body: that would jump the page. */
+.sheet, .dialog, .pop-shade { overflow: hidden; overscroll-behavior: contain; }
+.sheet > div { overscroll-behavior: contain; }
 /* The ⋯ menu: a small card that drops down from the button, as on Android. */
 .pop-shade { position: fixed; inset: 0; z-index: 30; }
 .pop { position: fixed; right: 12px; min-width: 250px; max-width: calc(100vw - 24px); z-index: 31;

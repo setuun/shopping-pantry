@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.7.3 (2026-11-19)
+
+- **The list no longer scrolls behind an open overlay.** A wipe on the dark backdrop of a sheet
+  or dialog, on the empty area around the ⋯ menu, or past the end of a sheet's own list used to
+  scroll the list underneath (measured: 400 → 2400 px). Pure CSS (`overscroll-behavior: contain`
+  on the overlays); a sheet's own long content still scrolls. Browsers without support for it
+  (Chrome before 144, Firefox before 150, Safari) keep the old behaviour.
+
 ## 0.7.2 (2026-10-29)
 
 - **Empty a list** (⋯ → "Empty list", or by voice: "Liste leeren"): for a list made and then
