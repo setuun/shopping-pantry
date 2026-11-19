@@ -924,11 +924,33 @@ function closeTop() {
 window.addEventListener("popstate", () => {
   if (closeTop()) { armHistory(); return; }
   if (LEAVE_ARMED) { setTimeout(() => history.back(), 0); return; }
+  leaveHint();
+  armHistory();
+});
+function leaveHint() {
   LEAVE_ARMED = true;
   toast(t("nav.backAgainToLeave"));
   setTimeout(() => { LEAVE_ARMED = false; }, 2500);
-  armHistory();
-});
+}
+
+/* Before the first tap the spare entry does not work: Chrome's back button SKIPS history
+   entries a page added without a user gesture, so the very first back left the app at once
+   (seen on the phone, 2026-11-19; a tap anywhere first and everything worked). A CloseWatcher
+   catches that back instead -- Chrome allows one without a gesture -- and gives the usual hint;
+   the next back then leaves. From the first tap on, the history entry counts again and the
+   watcher would only get in its way, so it goes. Not in Safari/Firefox: they do not skip. */
+function guardFirstBack() {
+  if (!("CloseWatcher" in window) || navigator.userActivation?.hasBeenActive) return;
+  let watcher = new CloseWatcher();
+  watcher.onclose = () => { watcher = null; leaveHint(); };
+  const firstTap = () => {
+    if (watcher) { watcher.destroy(); watcher = null; }
+    removeEventListener("click", firstTap, true);
+    removeEventListener("keydown", firstTap, true);
+  };
+  addEventListener("click", firstTap, true);
+  addEventListener("keydown", firstTap, true);
+}
 
 window.addEventListener("scroll", () => {
   document.querySelector("header").classList.toggle("scrolled", window.scrollY > 4);
@@ -1616,6 +1638,7 @@ async function start() {
   showTab("list");
   document.body.classList.add("ready");       // the list is drawn with its data
   armHistory();
+  guardFirstBack();
   live();
   // Once per device: the long press is not something anyone finds by themselves.
   if (CONFIG.features.speech && !store("shopping.hintMode")) {

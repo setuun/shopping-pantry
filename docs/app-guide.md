@@ -84,6 +84,9 @@ for or found wrong at least once; read it before building a screen.
 - **Back never leaves at once.** One spare history entry; back closes what is on top (menu,
   sheet, page, form), and at the top level "press back again to leave", the second press
   within 2.5 s leaves. On-screen back arrows call `history.back()`.
+  **Before the first tap that spare entry does not count:** Chrome's back skips history entries
+  added without a user gesture, so the first back would leave at once. Until the first tap a
+  `CloseWatcher` (one is allowed without a gesture) catches it and gives the hint.
 - Live state from other devices must not wipe a half-filled form (keep the open form across
   redraws).
 - Every button that waits for the server: disabled at once, spinner after 150 ms.

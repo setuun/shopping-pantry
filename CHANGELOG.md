@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.7.5 (2026-11-19)
+
+- **Back right after opening the app no longer leaves it at once.** Chrome skips history entries
+  a page adds before the first tap, so the spare entry did not catch the very first back (found
+  on the phone). Until the first tap a `CloseWatcher` catches it and shows "press back again to
+  leave"; from the first tap on, back works as before.
+
 ## 0.7.4 (2026-11-19)
 
 - **Sheets and the device-name question are native `<dialog>`s, the ⋯ menu is a popover.** The
