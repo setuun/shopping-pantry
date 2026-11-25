@@ -12,7 +12,7 @@ for or found wrong at least once; read it before building a screen.
 - Every word on screen through `t("area.key")`, texts in `app/i18n/*.json`, a check script.
 - **This guide says how it looks and behaves; how it is built comes from Google Chrome's Modern
   Web Guidance** (skill in `.claude/skills/modern-web-guidance`, pinned, telemetry off). Native
-  elements before hand-written JS (a sheet is a `<dialog>`, a menu a `popover`), as long as the
+  elements before hand-written JS (a sheet is a `<dialog>`, a toast a `popover`), as long as the
   behaviour below is kept. Browser target Baseline 2024; newer features only with a fallback.
 
 ## Look
@@ -68,7 +68,7 @@ for or found wrong at least once; read it before building a screen.
 
 | Need | Pattern |
 |---|---|
-| ⋯ (more actions) | small menu dropping down from the button, headed with what it acts on; closes on a tap outside; an `auto` popover (shown with `source:` the button, so ⋯ again closes it) |
+| ⋯ (more actions) | the same bottom sheet as below, headed with the name of what it acts on, the actions as full-width rows with icon (≥ 52 px), destructive ones red. Not a dropdown: an app has exactly two forms, **pages** (tabs between the bars: places to stay and scroll, ⚙ included) and **sheets** (anything picked, filled in or confirmed, then back where you were). Decided 2026-11-25 in the dolmetscher (0.5.2); inventree-pantry and shopping-pantry still drop a menu and follow on their next change |
 | Choosing among things (lists) | sheet from the bottom with a handle; the handle **must** drag the sheet down to close. A modal `<dialog closedby="any">`: Esc, back and a tap outside slide it down (via `cancel`), the page behind cannot scroll (`overscroll-behavior` on dialog and `::backdrop`) |
 | Yes / no, a name to type | the same bottom sheet. **Never** `alert`, `confirm`, `prompt` |
 | Long content (history, settings) | a tab between the bars, not a page over everything |
